@@ -1,0 +1,45 @@
+version: 2
+
+models:
+  - name: stg_crm__customers
+    description: "Clients, nettoyés et typés, un enregistrement par client."
+    columns:
+      - name: customer_id
+        description: "Identifiant stable du client."
+        data_tests: [not_null, unique]
+  - name: stg_billing__subscriptions
+    description: "Abonnements, un enregistrement par souscription."
+    columns:
+      - name: subscription_id
+        data_tests: [not_null, unique]
+      - name: customer_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_crm__customers')
+                field: customer_id
+      - name: plan_code
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['starter', 'growth', 'enterprise']
+  - name: stg_billing__invoices
+    description: "Factures, un enregistrement par facture. Montants EUR."
+    columns:
+      - name: invoice_id
+        data_tests: [not_null, unique]
+      - name: subscription_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_billing__subscriptions')
+                field: subscription_id
+      - name: invoice_status
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['paid', 'open', 'void']
+      - name: amount_eur
+        data_tests: [not_null]

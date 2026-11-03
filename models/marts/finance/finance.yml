@@ -1,0 +1,12 @@
+version: 2
+
+models:
+  - name: mart_monthly_billing
+    description: "Un enregistrement par mois d'émission, facturation en EUR hors factures void."
+    columns:
+      - name: invoice_month
+        description: "Premier jour du mois d'émission. Clé de granularité du mart."
+        data_tests: [unique, not_null]
+      - name: billed_amount_eur
+        description: "Somme des factures paid et open (sans taxes ni avoirs dans la V1)."
+        data_tests: [not_null]

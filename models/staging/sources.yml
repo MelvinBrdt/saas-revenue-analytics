@@ -1,0 +1,27 @@
+version: 2
+
+sources:
+  - name: crm
+    description: "Données clients synthétiques, chargées sans transformation dans DuckDB."
+    schema: raw
+    tables:
+      - name: customers
+        description: "Une ligne par client."
+        columns:
+          - name: customer_id
+            data_tests: [not_null, unique]
+
+  - name: billing
+    description: "Données sources synthétiques de facturation et d'abonnements."
+    schema: raw
+    tables:
+      - name: subscriptions
+        description: "Une ligne par abonnement."
+        columns:
+          - name: subscription_id
+            data_tests: [not_null, unique]
+      - name: invoices
+        description: "Une ligne par facture mensuelle émise."
+        columns:
+          - name: invoice_id
+            data_tests: [not_null, unique]

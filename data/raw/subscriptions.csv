@@ -1,0 +1,7 @@
+subscription_id,customer_id,plan_code,started_at,ended_at,monthly_price_eur
+S001,C001,starter,2026-01-01,,49.00
+S002,C002,growth,2026-01-01,,149.00
+S003,C003,starter,2026-02-01,,49.00
+S004,C004,growth,2026-02-01,2026-04-30,149.00
+S005,C005,enterprise,2026-03-01,,299.00
+S006,C006,growth,2026-04-01,,149.00

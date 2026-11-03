@@ -1,0 +1,15 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+# Generated data and DuckDB runtime
+/data/*.duckdb
+/data/*.duckdb.wal
+# dbt output
+/target/
+/dbt_packages/
+/logs/
+# OS
+.DS_Store
+# Local dbt user configuration
+.user.yml

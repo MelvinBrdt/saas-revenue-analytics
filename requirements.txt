@@ -1,0 +1,2 @@
+# dbt v1 + DuckDB adapter. Freeze transitive dependencies after validation.
+dbt-duckdb==1.11.1
