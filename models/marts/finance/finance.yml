@@ -10,3 +10,39 @@ models:
       - name: billed_amount_eur
         description: "Somme des factures paid et open (sans taxes ni avoirs dans la V1)."
         data_tests: [not_null]
+  - name: fct_invoices
+    description: "Table de faits : une ligne par facture."
+    columns:
+      - name: invoice_id
+        description: "Identifiant unique de facture."
+        data_tests:
+          - not_null
+          - unique
+
+      - name: subscription_id
+        description: "Abonnement associé à la facture."
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_billing__subscriptions')
+                field: subscription_id
+
+      - name: customer_id
+        description: "Client associé à la facture."
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_crm__customers')
+                field: customer_id
+
+      - name: invoice_date
+        description: "Date d'émission."
+        data_tests:
+          - not_null
+
+      - name: billed_amount_eur
+        description: "Montant facturé, nul pour une facture annulée."
+        data_tests:
+          - not_null
