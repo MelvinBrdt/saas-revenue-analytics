@@ -1,49 +1,131 @@
+
 version: 2
 
 models:
   - name: stg_crm__customers
-    description: "Clients, nettoyés et typés, un enregistrement par client."
+    description: >-
+      Données clients issues du CRM, nettoyées et typées.
+      Une ligne par client. Les identifiants et noms
+      sont nettoyés, les codes pays normalisés en
+      majuscules et les dates converties au type DATE.
+
     columns:
       - name: customer_id
-        description: "Identifiant stable du client."
+        description: >-
+          Identifiant stable du client, utilisé pour relier
+          les abonnements à leur client.
         data_tests: [not_null, unique]
+
+      - name: customer_name
+        description: >-
+          Nom du client, après suppression des
+          espaces en début et fin de chaîne.
+
+      - name: country_code
+        description: >-
+          Code pays associé au client, normalisé
+          en majuscules.
+
+      - name: created_date
+        description: >-
+          Date de création du client, convertie
+          depuis le champ source created_at.
+
   - name: stg_billing__subscriptions
-    description: "Abonnements, un enregistrement par souscription."
+    description: >-
+      Données d'abonnement normalisées depuis la source
+      de facturation. Une ligne par abonnement.
+      Les dates sont converties en DATE et les codes
+      de plan sont normalisés en minuscules.
+
     columns:
       - name: subscription_id
+        description: >-
+          Identifiant unique de l'abonnement.
+          Clé de granularité du modèle.
         data_tests: [not_null, unique]
+
       - name: customer_id
+        description: >-
+          Identifiant du client auquel l'abonnement
+          est rattaché.
         data_tests:
           - not_null
           - relationships:
               arguments:
                 to: ref('stg_crm__customers')
                 field: customer_id
+
       - name: plan_code
+        description: >-
+          Code du plan souscrit, normalisé en minuscules.
+          Valeurs attendues : starter, growth, enterprise.
         data_tests:
           - accepted_values:
               arguments:
                 values: ['starter', 'growth', 'enterprise']
+
+      - name: started_date
+        description: >-
+          Date de début de l'abonnement, convertie
+          depuis le champ source started_at.
+
+      - name: ended_date
+        description: >-
+          Date de fin de l'abonnement, si renseignée
+          et convertible en date. Peut être NULL.
+
+      - name: monthly_price_eur
+        description: >-
+          Prix mensuel associé à l'abonnement, en EUR.
+          Valeur de type DECIMAL(12,2).
+          Ne constitue pas à elle seule une mesure de MRR.
+
   - name: stg_billing__invoices
-    description: "Factures, un enregistrement par facture. Montants EUR."
+    description: >-
+      Factures issues de la source de facturation,
+      avec une ligne par facture. Les identifiants,
+      les dates, les montants et les statuts sont
+      normalisés. Les factures annulées sont conservées.
+
     columns:
       - name: invoice_id
+        description: >-
+          Identifiant unique de la facture.
+          Clé de granularité du modèle.
         data_tests: [not_null, unique]
+
       - name: invoice_date
-        description: "Date d'émission de la facture."
+        description: >-
+          Date d'émission de la facture, convertie
+          au type DATE.
         data_tests:
           - not_null
+
       - name: subscription_id
+        description: >-
+          Identifiant de l'abonnement auquel
+          la facture est rattachée.
         data_tests:
           - not_null
           - relationships:
               arguments:
                 to: ref('stg_billing__subscriptions')
                 field: subscription_id
+
       - name: invoice_status
+        description: >-
+          Statut normalisé en minuscules :
+          paid (payée), open (ouverte),
+          void (annulée).
         data_tests:
           - accepted_values:
               arguments:
                 values: ['paid', 'open', 'void']
+
       - name: amount_eur
+        description: >-
+          Montant initial de la facture en EUR,
+          converti au type DECIMAL(12,2).
+          Conservé pour tous les statuts, y compris void.
         data_tests: [not_null]

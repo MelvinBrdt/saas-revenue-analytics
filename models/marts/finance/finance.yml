@@ -1,26 +1,69 @@
+
 version: 2
 
 models:
   - name: mart_monthly_billing
-    description: "Un enregistrement par mois d'émission, facturation en EUR hors factures void."
+    description: >-
+      Agrégation mensuelle des factures émises, avec une ligne par
+      mois d'émission. Les factures paid et open contribuent au
+      montant facturé ; les factures void en sont exclues.
+      Ce modèle ne mesure ni le MRR, ni les encaissements,
+      ni le revenu comptabilisé.
+
     columns:
       - name: invoice_month
-        description: "Premier jour du mois d'émission. Clé de granularité du mart."
+        description: >-
+          Premier jour du mois d'émission des factures.
+          Clé de granularité du mart.
         data_tests: [unique, not_null]
+
       - name: billed_amount_eur
-        description: "Somme des factures paid et open (sans taxes ni avoirs dans la V1)."
+        description: >-
+          Somme mensuelle des montants facturés en EUR.
+          Inclut les factures paid et open, exclut les
+          factures void. La V1 ne modélise ni taxes ni avoirs.
         data_tests: [not_null]
+
+      - name: issued_invoice_count
+        description: >-
+          Nombre de factures non annulées émises pendant
+          le mois, soit les factures paid et open.
+
+      - name: paid_invoice_count
+        description: >-
+          Nombre de factures dont le statut est paid.
+
+      - name: open_invoice_count
+        description: >-
+          Nombre de factures dont le statut est open.
+          Ces factures contribuent au montant facturé
+          même si elles ne sont pas encore payées.
+
+      - name: void_invoice_count
+        description: >-
+          Nombre de factures annulées (statut void).
+          Elles sont comptées pour le suivi mais ne
+          contribuent pas au montant facturé.
+
   - name: fct_invoices
-    description: "Table de faits : une ligne par facture."
+    description: >-
+      Table de faits à la granularité d'une facture.
+      Conserve les factures annulées et enrichit chaque
+      facture avec le client associé à son abonnement.
+      Centralise le calcul du montant facturé utilisable
+      par les modèles analytiques.
+
     columns:
       - name: invoice_id
-        description: "Identifiant unique de facture."
+        description: >-
+          Identifiant unique de la facture.
+          Clé de granularité de la table.
         data_tests:
           - not_null
           - unique
 
       - name: subscription_id
-        description: "Abonnement associé à la facture."
+        description: "Identifiant de l'abonnement facturé."
         data_tests:
           - not_null
           - relationships:
@@ -29,7 +72,9 @@ models:
                 field: subscription_id
 
       - name: customer_id
-        description: "Client associé à la facture."
+        description: >-
+          Identifiant du client associé à l'abonnement
+          de la facture.
         data_tests:
           - not_null
           - relationships:
@@ -38,11 +83,25 @@ models:
                 field: customer_id
 
       - name: invoice_date
-        description: "Date d'émission."
+        description: "Date d'émission de la facture."
         data_tests:
           - not_null
 
+      - name: invoice_status
+        description: >-
+          Statut de la facture : paid (payée),
+          open (ouverte), void (annulée).
+
+      - name: amount_eur
+        description: >-
+          Montant initial de la facture en EUR,
+          conservé quel que soit son statut.
+
       - name: billed_amount_eur
-        description: "Montant facturé, nul pour une facture annulée."
+        description: >-
+          Montant contribuant à la facturation en EUR.
+          Égal à amount_eur pour les statuts paid et open,
+          et à zéro pour le statut void.
+          Ne représente pas un encaissement.
         data_tests:
           - not_null
