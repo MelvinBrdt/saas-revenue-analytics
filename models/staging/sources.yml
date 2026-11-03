@@ -1,27 +1,84 @@
+
 version: 2
 
 sources:
   - name: crm
-    description: "Données clients synthétiques, chargées sans transformation dans DuckDB."
+    description: >-
+      Données clients synthétiques chargées dans
+      le schéma raw de DuckDB, avant normalisation dbt.
     schema: raw
+
     tables:
       - name: customers
-        description: "Une ligne par client."
+        description: >-
+          Données clients brutes.
+          Une ligne par client.
         columns:
           - name: customer_id
+            description: "Identifiant du client dans la source CRM."
             data_tests: [not_null, unique]
 
+          - name: customer_name
+            description: "Nom du client dans la source CRM."
+
+          - name: country_code
+            description: "Code pays avant normalisation dbt."
+
+          - name: created_at
+            description: "Date de création issue de la source CRM."
+
   - name: billing
-    description: "Données sources synthétiques de facturation et d'abonnements."
+    description: >-
+      Données synthétiques de facturation et
+      d'abonnement chargées dans le schéma raw
+      de DuckDB, avant normalisation dbt.
     schema: raw
+
     tables:
       - name: subscriptions
-        description: "Une ligne par abonnement."
+        description: >-
+          Données brutes des abonnements.
+          Une ligne par abonnement.
         columns:
           - name: subscription_id
+            description: "Identifiant de l'abonnement."
             data_tests: [not_null, unique]
+
+          - name: customer_id
+            description: "Identifiant du client associé."
+
+          - name: plan_code
+            description: "Code du plan souscrit."
+
+          - name: started_at
+            description: "Date de début de l'abonnement."
+
+          - name: ended_at
+            description: >-
+              Date de fin éventuelle de l'abonnement.
+              Peut être absente.
+
+          - name: monthly_price_eur
+            description: "Prix mensuel de l'abonnement en EUR."
+
       - name: invoices
-        description: "Une ligne par facture mensuelle émise."
+        description: >-
+          Données brutes des factures.
+          Une ligne par facture, y compris
+          les factures annulées.
         columns:
           - name: invoice_id
+            description: "Identifiant de la facture."
             data_tests: [not_null, unique]
+
+          - name: subscription_id
+            description: "Abonnement associé à la facture."
+
+          - name: invoice_date
+            description: "Date d'émission de la facture."
+
+          - name: amount_eur
+            description: "Montant initial de la facture en EUR."
+
+          - name: invoice_status
+            description: "Statut brut de la facture."
