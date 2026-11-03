@@ -29,6 +29,10 @@ models:
     columns:
       - name: invoice_id
         data_tests: [not_null, unique]
+      - name: invoice_date
+        description: "Date d'émission de la facture."
+        data_tests:
+          - not_null
       - name: subscription_id
         data_tests:
           - not_null
