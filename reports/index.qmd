@@ -1,6 +1,7 @@
 ---
 title: "Rapport financier"
-subtitle: "Janvier à juin 2026, données synthétiques"
+pagetitle: "Rapport financier"
+description-meta: "Rapport financier d'une entreprise SaaS fictive : budget, revenu récurrent, concentration, encours client et délais de paiement."
 lang: fr
 format:
   html:
@@ -23,14 +24,17 @@ from IPython.display import HTML, Markdown, display
 con = duckdb.connect("../data/saas.duckdb", read_only=True)
 
 MONTHS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"]
-BLUE = "#2a78d6"
-ORANGE = "#eb6834"
-RED = "#e34948"
+BLUE = "#0072b2"
+ORANGE = "#c2410c"
 plotly_loaded = False
 
 
 def euros(value):
     return f"{value:,.0f}".replace(",", " ") + " €"
+
+
+def signed_euros(value):
+    return f"{value:+,.0f}".replace(",", " ") + " €"
 
 
 def percent(value):
@@ -41,16 +45,22 @@ def month_name(day):
     return MONTHS[day.month - 1]
 
 
-def signed_euros(value):
-    return f"{value:+,.0f}".replace(",", "\u00a0") + "\u00a0€"
-
-
-def signed_percent(value):
-    return f"{value * 100:+.1f}".replace(".", ",") + "\u00a0%"
-
-
 def long_date(day):
     return f"{day.day} {month_name(day)} {day.year}"
+
+
+def in_months(words):
+    return "en " + words[0] if len(words) == 1 else "en " + ", en ".join(words[:-1]) + " et en " + words[-1]
+
+
+def of_month(day):
+    name = month_name(day)
+    return f"d'{name}" if name[0] in "aeio" else f"de {name}"
+
+
+def favorable_pattern(flags):
+    # Hatching repeats what color says, so unfavorable bars stay visible without color.
+    return dict(shape=["" if flag else "/" for flag in flags], fgcolor="white", size=7, solidity=0.25)
 
 
 def show_chart(figure, description):
@@ -66,8 +76,30 @@ def show_chart(figure, description):
     display(HTML(f'<div role="img" aria-label="{description}">{chart}</div>'))
 
 
-billed_total = con.execute("select sum(billed_amount_eur) from analytics_marts.mart_monthly_billing").fetchone()[0]
-closing_mrr = con.execute("select closing_mrr_eur from analytics_marts.mart_monthly_mrr order by mrr_month desc limit 1").fetchone()[0]
+budget = con.execute("""
+    select
+        budget_month,
+        billed_amount_eur,
+        budget_billed_eur,
+        billed_variance_eur,
+        closing_mrr_eur,
+        budget_closing_mrr_eur,
+        mrr_variance_eur
+    from analytics_marts.mart_budget_vs_actual
+    order by budget_month
+""").fetchall()
+movements = con.execute("""
+    select
+        mrr_month,
+        opening_mrr_eur,
+        new_mrr_eur + expansion_mrr_eur + reactivation_mrr_eur as gained_eur,
+        contraction_mrr_eur + churned_mrr_eur as lost_eur,
+        closing_mrr_eur,
+        closing_customer_count,
+        gross_mrr_churn_rate
+    from analytics_marts.mart_monthly_mrr
+    order by mrr_month
+""").fetchall()
 customers = con.execute("""
     select d.customer_name, sum(b.billed_amount_eur) as billed_amount_eur
     from analytics_marts.mart_customer_monthly_billing as b
@@ -90,126 +122,91 @@ payments = con.execute("""
         on p.customer_id = d.customer_id
     order by p.avg_days_to_pay
 """).fetchall()
+term_days = con.execute("select max(due_date - invoice_date) from analytics_marts.fct_invoices").fetchone()[0]
+
+first_month, last_month = budget[0], budget[-1]
+total_billed = sum(row[1] for row in budget)
+total_budget = sum(row[2] for row in budget)
+total_variance = sum(row[3] for row in budget)
+worst_billed = min(budget, key=lambda row: row[3])
+worst_churn = min(movements, key=lambda row: row[3])
+largest_mrr_gap = min(row[6] for row in budget)
+gap_months = [row for row in budget if row[6] == largest_mrr_gap]
 open_total = sum(invoice[3] for invoice in open_invoices)
 overdue_total = sum(invoice[3] for invoice in open_invoices if invoice[4] > 0)
 paid_count = sum(row[1] for row in payments)
 late_count = sum(row[4] for row in payments)
 average_days = sum(row[2] for row in payments) / paid_count
 top_name, top_amount = customers[-1]
+closing_date = open_invoices[0][6]
+
+display(HTML(
+    f'<p class="report-period">De {month_name(first_month[0])} à {month_name(last_month[0])} {last_month[0].year}, données fictives</p>'
+))
 
 tiles = [
-    ("Facturé sur la période", euros(billed_total)),
-    (f"MRR fin {month_name(con.execute('select max(mrr_month) from analytics_marts.mart_monthly_mrr').fetchone()[0])}", euros(closing_mrr)),
-    ("Factures en retard", euros(overdue_total)),
-    ("Délai moyen de paiement", f"{average_days:.0f}\u00a0jours"),
+    ("CA facturé HT", euros(total_billed)),
+    (f"MRR fin {month_name(last_month[0])}", euros(last_month[4])),
+    ("Créances échues", euros(overdue_total)),
+    ("Délai moyen de paiement", f"{average_days:.0f} jours"),
 ]
 display(HTML(
     '<div class="tiles">'
     + "".join(f'<div class="tile"><div class="tile-label">{label}</div><div class="tile-value">{value}</div></div>' for label, value in tiles)
     + "</div>"
 ))
+
+churn_sentence = ""
+if worst_churn[3] < 0:
+    churn_sentence = f" Le churn {of_month(worst_churn[0])} coûte {euros(-worst_churn[3])} de MRR ({percent(worst_churn[6])})"
+    churn_sentence += ", compensé par le MRR gagné sur le mois." if worst_churn[2] >= -worst_churn[3] else "."
+
+attention = ""
+if largest_mrr_gap < 0:
+    months = in_months([month_name(row[0]) for row in gap_months])
+    attention = f"\n- **Point d'attention.** L'écart de MRR au budget est le plus marqué {months}, à {signed_euros(largest_mrr_gap)}."
+    masked = [month_name(row[0]) for row in gap_months if row[3] >= 0]
+    if masked:
+        attention += f" {in_months(masked).capitalize()}, les factures ponctuelles masquent cet écart dans le CA."
+
+display(Markdown(f"""
+## Synthèse
+
+- **Activité.** Le CA facturé HT atteint {euros(total_billed)}, soit {percent(total_billed / total_budget)} du budget.
+- **Revenu récurrent.** Le MRR termine {month_name(last_month[0])} à {euros(last_month[4])}, soit {percent(last_month[4] / last_month[5])} de l'objectif.{churn_sentence}{attention}
+- **Encaissements.** L'encours client s'élève à {euros(open_total)}, dont {euros(overdue_total)} de créances échues ({percent(overdue_total / open_total)}).
+"""))
 ```
 
-## Pourquoi le facturé dépasse-t-il parfois le MRR ?
+## Réalisé par rapport au budget
 
 ```{python}
-rows = con.execute("""
-    select b.invoice_month, b.billed_amount_eur, m.closing_mrr_eur
-    from analytics_marts.mart_monthly_billing as b
-    inner join analytics_marts.mart_monthly_mrr as m
-        on b.invoice_month = m.mrr_month
-    order by 1
-""").fetchall()
-gaps = [f"{month_name(row[0])} ({euros(row[1] - row[2])})" for row in rows if row[1] > row[2]]
-
+direction = "dépasse le budget" if total_variance >= 0 else "reste sous le budget"
 display(Markdown(
-    "Le MRR mesure ce qui se répète chaque mois, alors que le facturé inclut aussi les factures ponctuelles. "
-    f"L'écart apparaît en {' et en '.join(gaps)}."
-))
-
-labels = [month_name(row[0]) for row in rows]
-figure = go.Figure()
-figure.add_scatter(x=labels, y=[float(row[1]) for row in rows], name="Facturé", mode="lines+markers", line=dict(color=BLUE, width=2), hovertemplate="%{y:,.0f} €")
-figure.add_scatter(x=labels, y=[float(row[2]) for row in rows], name="MRR", mode="lines+markers", line=dict(color=ORANGE, width=2, dash="dash"), hovertemplate="%{y:,.0f} €")
-figure.update_layout(height=320, hovermode="x unified", yaxis=dict(rangemode="tozero", ticksuffix=" €"), legend=dict(orientation="h", y=1.12))
-show_chart(figure, "Courbes mensuelles du facturé et du MRR")
-```
-
-## Comment évolue le revenu récurrent ?
-
-```{python}
-movements = con.execute("""
-    select
-        mrr_month,
-        opening_mrr_eur,
-        new_mrr_eur + expansion_mrr_eur + reactivation_mrr_eur as gains_eur,
-        contraction_mrr_eur + churned_mrr_eur as losses_eur,
-        closing_mrr_eur,
-        closing_customer_count,
-        gross_mrr_churn_rate
-    from analytics_marts.mart_monthly_mrr
-    order by mrr_month
-""").fetchall()
-worst = min(movements, key=lambda row: row[3])
-
-if worst[3] < 0:
-    display(Markdown(
-        "Un total stable peut cacher un départ. "
-        f"En {month_name(worst[0])}, le revenu récurrent perd {euros(-worst[3])}, soit {percent(worst[6])} de son niveau d'ouverture."
-    ))
-
-table = [
-    "| Mois | Ouverture | Gains | Pertes | Clôture | Clients | Part perdue |",
-    "|:---|---:|---:|---:|---:|---:|---:|",
-]
-for row in movements:
-    lost = "n/a" if row[6] is None else percent(row[6])
-    table.append(f"| {month_name(row[0]).capitalize()} | {euros(row[1])} | {euros(row[2])} | {euros(row[3])} | {euros(row[4])} | {row[5]} | {lost} |")
-display(Markdown("\n".join(table)))
-```
-
-## Sommes-nous au-dessus ou en dessous du budget ?
-
-```{python}
-budget = con.execute("""
-    select
-        budget_month,
-        billed_amount_eur,
-        budget_billed_eur,
-        billed_variance_eur,
-        closing_mrr_eur,
-        budget_closing_mrr_eur,
-        mrr_variance_eur
-    from analytics_marts.mart_budget_vs_actual
-    order by budget_month
-""").fetchall()
-total_billed = sum(row[1] for row in budget)
-total_budget = sum(row[2] for row in budget)
-total_variance = sum(row[3] for row in budget)
-worst_month = min(budget, key=lambda row: row[3])
-last_month = budget[-1]
-
-display(Markdown(
-    f"Sur la période, le facturé s'écarte du budget de {signed_euros(total_variance)} ({signed_percent(total_variance / total_budget)}). "
-    f"L'écart le plus défavorable est en {month_name(worst_month[0])}, à {signed_euros(worst_month[3])}. "
-    f"Fin {month_name(last_month[0])}, le MRR s'écarte de son budget de {signed_euros(last_month[6])}."
+    f"Le CA facturé {direction} de {euros(abs(total_variance))} sur la période. "
+    f"L'écart le plus défavorable est en {month_name(worst_billed[0])}, à {signed_euros(worst_billed[3])}. "
+    "Les barres hachurées signalent les mois sous le budget."
 ))
 
 figure = go.Figure()
 figure.add_bar(
     x=[month_name(row[0]) for row in budget],
     y=[float(row[3]) for row in budget],
-    marker=dict(color=[BLUE if row[3] >= 0 else RED for row in budget], cornerradius=4),
+    marker=dict(
+        color=[BLUE if row[3] >= 0 else ORANGE for row in budget],
+        pattern=favorable_pattern([row[3] >= 0 for row in budget]),
+        cornerradius=4,
+    ),
     text=[signed_euros(row[3]) for row in budget],
     textposition="outside",
     cliponaxis=False,
     hovertemplate="%{x} : %{y:+,.0f} €<extra></extra>",
 )
-figure.update_layout(height=300, yaxis=dict(ticksuffix=" €", zeroline=True, zerolinecolor="#898781", zerolinewidth=1), xaxis=dict(side="bottom"))
-show_chart(figure, "Barres de l'écart mensuel entre le facturé et le budget")
+figure.update_layout(height=300, yaxis=dict(ticksuffix=" €", zeroline=True, zerolinecolor="#898781", zerolinewidth=1))
+show_chart(figure, "Barres de l'écart mensuel entre le CA facturé et le budget")
 
 table = [
-    "| Mois | Facturé | Budget | Écart | MRR | Budget | Écart |",
+    "| Mois | CA facturé | Budget | Écart | MRR | Budget | Écart |",
     "|:---|---:|---:|---:|---:|---:|---:|",
 ]
 for row in budget:
@@ -218,10 +215,46 @@ table.append(f"| **Total** | **{euros(total_billed)}** | **{euros(total_budget)}
 display(Markdown("\n".join(table)))
 ```
 
-## Quels clients pèsent le plus dans le facturé ?
+## CA facturé et revenu récurrent
 
 ```{python}
-display(Markdown(f"{top_name} représente {percent(top_amount / billed_total)} du montant facturé sur la période."))
+gaps = [f"{month_name(row[0])} ({euros(row[1] - row[4])})" for row in budget if row[1] > row[4]]
+
+display(Markdown(
+    "Le MRR ne retient que les abonnements, alors que le CA facturé inclut aussi les factures ponctuelles. "
+    f"L'écart apparaît {in_months(gaps)}."
+))
+
+labels = [month_name(row[0]) for row in budget]
+figure = go.Figure()
+figure.add_scatter(x=labels, y=[float(row[1]) for row in budget], name="CA facturé", mode="lines+markers", line=dict(color=BLUE, width=2), marker=dict(symbol="circle", size=8), hovertemplate="%{y:,.0f} €")
+figure.add_scatter(x=labels, y=[float(row[4]) for row in budget], name="MRR", mode="lines+markers", line=dict(color=ORANGE, width=2, dash="dash"), marker=dict(symbol="square", size=8), hovertemplate="%{y:,.0f} €")
+figure.update_layout(height=320, hovermode="x unified", yaxis=dict(rangemode="tozero", ticksuffix=" €"), legend=dict(orientation="h", y=1.12))
+show_chart(figure, "Courbes mensuelles du CA facturé et du MRR")
+```
+
+## Évolution du MRR
+
+```{python}
+display(Markdown(
+    f"Le MRR passe de {euros(movements[0][4])} fin {month_name(movements[0][0])} à {euros(movements[-1][4])} fin {month_name(movements[-1][0])}. "
+    "Un total stable peut masquer un départ : il faut lire le MRR perdu et le churn brut, pas seulement la clôture."
+))
+
+table = [
+    "| Mois | Ouverture | MRR gagné | MRR perdu | Clôture | Clients | Churn brut |",
+    "|:---|---:|---:|---:|---:|---:|---:|",
+]
+for row in movements:
+    churn = "n/a" if row[6] is None else percent(row[6])
+    table.append(f"| {month_name(row[0]).capitalize()} | {euros(row[1])} | {euros(row[2])} | {euros(row[3])} | {euros(row[4])} | {row[5]} | {churn} |")
+display(Markdown("\n".join(table)))
+```
+
+## Concentration du CA
+
+```{python}
+display(Markdown(f"{top_name} représente {percent(top_amount / total_billed)} du CA facturé sur la période."))
 
 figure = go.Figure()
 figure.add_bar(
@@ -235,25 +268,24 @@ figure.add_bar(
     hovertemplate="%{y} : %{x:,.0f} €<extra></extra>",
 )
 figure.update_layout(height=300, xaxis=dict(visible=False, range=[0, float(top_amount) * 1.18]), yaxis=dict(automargin=True))
-show_chart(figure, "Barres du montant facturé par client")
+show_chart(figure, "Barres du CA facturé par client")
 ```
 
-## Quelles factures sont en retard ?
+## Encours client et balance âgée
 
 ```{python}
-closing_date = open_invoices[0][6]
 display(Markdown(
-    f"Au {long_date(closing_date)}, {euros(open_total)} restent à encaisser, dont {euros(overdue_total)} en retard."
+    f"Au {long_date(closing_date)}, l'encours client s'élève à {euros(open_total)}, dont {euros(overdue_total)} de créances échues."
 ))
 
 buckets = {
-    "not_due": "Pas encore échu",
-    "1_30_days": "1 à 30 jours de retard",
-    "31_60_days": "31 à 60 jours de retard",
-    "61_90_days": "61 à 90 jours de retard",
-    "over_90_days": "Plus de 90 jours de retard",
+    "not_due": "Non échu",
+    "1_30_days": "Échu de 1 à 30 jours",
+    "31_60_days": "Échu de 31 à 60 jours",
+    "61_90_days": "Échu de 61 à 90 jours",
+    "over_90_days": "Échu de plus de 90 jours",
 }
-table = ["| Tranche | Factures | Montant |", "|:---|---:|---:|"]
+table = ["| Ancienneté | Factures | Montant |", "|:---|---:|---:|"]
 for bucket, label in buckets.items():
     amounts = [invoice[3] for invoice in open_invoices if invoice[5] == bucket]
     table.append(f"| {label} | {len(amounts)} | {euros(sum(amounts))} |")
@@ -262,42 +294,55 @@ display(Markdown("\n".join(table)))
 ```
 
 ```{python}
-table = ["| Client | Facture | Échéance | Montant | Retard |", "|:---|:---|:---|---:|---:|"]
+table = ["| Client | Date de facture | Échéance | Montant | Retard |", "|:---|:---|:---|---:|---:|"]
 for name, invoice_date, due, amount, days_overdue, _, _ in open_invoices:
     delay = f"{days_overdue} jours" if days_overdue > 0 else "Non échue"
     table.append(f"| {name} | {long_date(invoice_date)} | {long_date(due)} | {euros(amount)} | {delay} |")
 display(Markdown("\n".join(table)))
 ```
 
-## En combien de jours nos clients paient-ils ?
+## Délais de paiement
 
 ```{python}
-term_days = con.execute("select max(due_date - invoice_date) from analytics_marts.fct_invoices").fetchone()[0]
-
 display(Markdown(
-    f"En moyenne, nos clients paient en {average_days:.0f} jours, pour une échéance à {term_days} jours. "
-    f"{late_count} factures sur {paid_count} ont été payées en retard. "
-    "En orange, les clients dont le délai moyen dépasse l'échéance."
+    f"Les clients règlent en {average_days:.0f} jours en moyenne, pour une échéance à {term_days} jours. "
+    f"{percent(late_count / paid_count)} des factures réglées l'ont été après échéance. "
+    "Les barres hachurées signalent les clients dont le délai moyen dépasse l'échéance."
 ))
 
 figure = go.Figure()
 figure.add_bar(
     x=[float(row[3]) for row in payments],
-    y=[row[0] for row in payments],
+    # The delay sits in the axis label, so it stays readable whatever the bar color.
+    y=[f"{row[0]}, {row[3]:.0f} jours" for row in payments],
     orientation="h",
-    marker=dict(color=[ORANGE if row[3] > term_days else BLUE for row in payments], cornerradius=4),
-    text=[f"{row[3]:.0f} jours" for row in payments],
-    # Labels sit at the start of the bars, clear of the due date line.
-    textposition="inside",
-    insidetextanchor="start",
-    textfont=dict(color="white"),
-    hovertemplate="%{y} : %{x:.0f} jours<extra></extra>",
+    marker=dict(
+        color=[ORANGE if row[3] > term_days else BLUE for row in payments],
+        pattern=favorable_pattern([row[3] <= term_days for row in payments]),
+        cornerradius=4,
+    ),
+    hovertemplate="%{y}<extra></extra>",
 )
 figure.add_vline(x=term_days, line=dict(color="#52514e", width=1, dash="dash"), annotation_text="Échéance", annotation_position="top")
 figure.update_layout(height=300, xaxis=dict(visible=False, range=[0, float(payments[-1][3]) * 1.05]), yaxis=dict(automargin=True))
 show_chart(figure, "Barres du délai moyen de paiement par client, avec l'échéance en repère")
 ```
 
+## Définitions
+
+- **CA facturé HT :** montant des factures payées ou en attente, hors factures annulées.
+- **MRR :** prix mensuel des abonnements actifs le dernier jour du mois.
+- **Churn brut :** MRR perdu sur le mois, rapporté au MRR d'ouverture.
+- **Encours client :** factures émises et non réglées à la date d'arrêt.
+- **Créance échue :** facture non réglée dont l'échéance est dépassée à la date d'arrêt.
+
 ::: {.report-note}
-Le montant facturé inclut les factures payées et en attente, et exclut les factures annulées. Les données sont fictives, et ce rapport ne constitue pas un document comptable. Le code et les définitions sont sur [GitHub](https://github.com/MelvinBrdt/saas-revenue-analytics).
+```{python}
+#| output: asis
+customer_count = con.execute("select count(*) from analytics_marts.dim_customers").fetchone()[0]
+print(
+    f"Données fictives : {customer_count} clients sur {len(budget)} mois. Ces taux illustrent une méthode et n'ont pas de portée statistique. "
+    "Ce rapport n'est pas un document comptable. Le code et les modèles sont sur [GitHub](https://github.com/MelvinBrdt/saas-revenue-analytics)."
+)
+```
 :::
