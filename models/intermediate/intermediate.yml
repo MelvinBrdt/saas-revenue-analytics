@@ -1,0 +1,86 @@
+
+version: 2
+
+models:
+  - name: int_months
+    description: >-
+      Calendrier mensuel, du mois du premier abonnement au mois de la
+      dernière facture. Cette borne évite que les résultats dépendent
+      de la date d'exécution.
+
+    columns:
+      - name: month_start
+        description: "Premier jour du mois. Clé de granularité du modèle."
+        data_tests: [unique, not_null]
+
+      - name: month_end
+        description: "Dernier jour du mois."
+        data_tests: [not_null]
+
+  - name: int_customer_monthly_mrr
+    description: >-
+      MRR de chaque client à la fin de chaque mois, avec une ligne par
+      client et par mois où au moins un abonnement est actif. Un abonnement
+      qui se termine le dernier jour du mois n'est plus compté ce mois-là.
+
+    columns:
+      - name: customer_id
+        description: "Identifiant du client. Clé de granularité avec mrr_month."
+        data_tests: [not_null]
+
+      - name: mrr_month
+        description: "Premier jour du mois mesuré. Clé de granularité avec customer_id."
+        data_tests: [not_null]
+
+      - name: mrr_eur
+        description: "Somme des prix mensuels des abonnements actifs à la fin du mois, en EUR."
+        data_tests: [not_null]
+
+      - name: active_subscription_count
+        description: "Nombre d'abonnements actifs du client à la fin du mois."
+        data_tests: [not_null]
+
+unit_tests:
+  - name: test_int_months_covers_first_subscription_to_last_invoice
+    description: >-
+      Le calendrier part du mois du premier abonnement, s'arrête au mois de
+      la dernière facture, passe le changement d'année et gère février.
+    model: int_months
+    given:
+      - input: ref('stg_billing__subscriptions')
+        rows:
+          - {subscription_id: S1, started_date: '2025-11-20'}
+          - {subscription_id: S2, started_date: '2026-01-10'}
+      - input: ref('stg_billing__invoices')
+        rows:
+          - {invoice_id: I1, invoice_date: '2025-12-01'}
+          - {invoice_id: I2, invoice_date: '2026-02-14'}
+    expect:
+      rows:
+        - {month_start: '2025-11-01', month_end: '2025-11-30'}
+        - {month_start: '2025-12-01', month_end: '2025-12-31'}
+        - {month_start: '2026-01-01', month_end: '2026-01-31'}
+        - {month_start: '2026-02-01', month_end: '2026-02-28'}
+
+  - name: test_int_customer_monthly_mrr_uses_month_end_snapshot
+    description: >-
+      Un abonnement démarré le dernier jour du mois compte dans ce mois.
+      Un abonnement terminé le dernier jour du mois n'y compte plus, et
+      plusieurs abonnements d'un client s'additionnent.
+    model: int_customer_monthly_mrr
+    given:
+      - input: ref('int_months')
+        rows:
+          - {month_start: '2026-01-01', month_end: '2026-01-31'}
+          - {month_start: '2026-02-01', month_end: '2026-02-28'}
+      - input: ref('stg_billing__subscriptions')
+        rows:
+          - {subscription_id: S1, customer_id: C1, started_date: '2026-01-01', ended_date: null, monthly_price_eur: 100.00}
+          - {subscription_id: S2, customer_id: C1, started_date: '2026-02-28', ended_date: null, monthly_price_eur: 50.00}
+          - {subscription_id: S3, customer_id: C2, started_date: '2026-01-01', ended_date: '2026-01-31', monthly_price_eur: 30.00}
+          - {subscription_id: S4, customer_id: C3, started_date: '2026-01-01', ended_date: '2026-02-15', monthly_price_eur: 20.00}
+    expect:
+      rows:
+        - {customer_id: C1, mrr_month: '2026-01-01', mrr_eur: 100.00, active_subscription_count: 1}
+        - {customer_id: C1, mrr_month: '2026-02-01', mrr_eur: 150.00, active_subscription_count: 2}
+        - {customer_id: C3, mrr_month: '2026-01-01', mrr_eur: 20.00, active_subscription_count: 1}
