@@ -45,6 +45,10 @@ jobs:
       - name: Validate dbt connection
         run: dbt debug --profiles-dir .
 
+      # Runs before the build so a style issue fails fast.
+      - name: Lint SQL
+        run: sqlfluff lint models tests
+
       - name: Build and test dbt project
         run: dbt build --profiles-dir .
 
