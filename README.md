@@ -16,7 +16,7 @@ Les données sont entièrement synthétiques : ce dépôt ne contient aucune don
 |---|---|
 | Modélisation analytique | Des couches distinctes (staging, intermédiaire, table de faits, marts) avec un grain explicite pour chaque modèle |
 | Rigueur métier | Des définitions claires du montant facturé et du MRR, distincts de l'encaissé et du revenu comptabilisé |
-| Qualité des données | 75 tests de données et 6 tests unitaires, dont des réconciliations entre les modèles |
+| Qualité des données | 80 tests de données et 7 tests unitaires, dont des réconciliations entre les modèles |
 | Automatisation | Un pipeline de CI qui reconstruit et teste tout le projet à chaque Pull Request |
 | Reproductibilité | Des dépendances verrouillées et des données de démonstration identiques à chaque exécution |
 | Méthode de travail | Des branches dédiées, des Pull Requests décrites et une branche `main` protégée |
@@ -85,6 +85,7 @@ flowchart LR
     C --> D[fct_invoices<br>une ligne par facture]
     D --> E[mart_monthly_billing<br>une ligne par mois]
     D --> F[mart_customer_monthly_billing<br>une ligne par client et par mois]
+    C --> J[dim_customers<br>une ligne par client]
     C --> G[int_customer_monthly_mrr<br>MRR de fin de mois par client]
     G --> H[mart_customer_monthly_mrr<br>mouvements par client et par mois]
     H --> I[mart_monthly_mrr<br>totaux et taux de churn par mois]
@@ -95,6 +96,7 @@ flowchart LR
 | Staging | `stg_crm__customers`, `stg_billing__subscriptions`, `stg_billing__invoices` | Nettoyer et typer les données brutes, sans règle métier |
 | Intermédiaire | `int_months`, `int_customer_monthly_mrr` | Préparer le calendrier et le MRR de fin de mois, sans les exposer aux utilisateurs |
 | Table de faits | `fct_invoices` | Rattacher chaque facture à son client et calculer le montant facturé, à un seul endroit |
+| Dimension | `dim_customers` | Fournir le nom et le pays de chaque client aux analyses |
 | Marts | `mart_monthly_billing`, `mart_customer_monthly_billing`, `mart_customer_monthly_mrr`, `mart_monthly_mrr` | Fournir des agrégats prêts à l'emploi pour la finance |
 
 ## Les décisions de modélisation
@@ -171,4 +173,3 @@ Ce projet est une démonstration, pas un système en production :
 
 - Ajouter un lint SQL à la CI.
 - Ajouter les mois sans facture au mart par client, avec une population définie.
-- Ajouter une dimension clients pour afficher les noms et les pays dans les marts.
