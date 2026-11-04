@@ -8,6 +8,7 @@ with expected as (
     from {{ ref('int_customer_monthly_mrr') }}
     group by 1
 ),
+
 actual as (
     select
         mrr_month,
@@ -17,13 +18,15 @@ actual as (
     -- Months without MRR have no row in the intermediate model.
     where closing_mrr_eur > 0
 )
+
 select
     coalesce(e.mrr_month, a.mrr_month) as mrr_month,
     e.closing_mrr_eur as expected_closing_mrr_eur,
     a.closing_mrr_eur as actual_closing_mrr_eur,
     e.closing_customer_count as expected_closing_customer_count,
     a.closing_customer_count as actual_closing_customer_count
-from expected e
-full outer join actual a on e.mrr_month = a.mrr_month
-where e.closing_mrr_eur is distinct from a.closing_mrr_eur
+from expected as e
+full outer join actual as a on e.mrr_month = a.mrr_month
+where
+    e.closing_mrr_eur is distinct from a.closing_mrr_eur
     or e.closing_customer_count is distinct from a.closing_customer_count

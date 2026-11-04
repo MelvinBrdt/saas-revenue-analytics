@@ -35,7 +35,7 @@ customer_months as (
         m.month_start as mrr_month
     from first_months as f
     inner join months as m
-        on m.month_start >= f.first_mrr_month
+        on f.first_mrr_month <= m.month_start
 
 ),
 
@@ -55,8 +55,9 @@ balances as (
         coalesce(c.mrr_eur, 0) as closing_mrr_eur
     from customer_months as cm
     left join customer_mrr as c
-        on cm.customer_id = c.customer_id
-        and cm.mrr_month = c.mrr_month
+        on
+            cm.customer_id = c.customer_id
+            and cm.mrr_month = c.mrr_month
 
 ),
 
@@ -88,8 +89,10 @@ select
     cast(opening_mrr_eur as decimal(14, 2)) as opening_mrr_eur,
     cast(case when movement_type = 'new' then mrr_change_eur else 0 end as decimal(14, 2)) as new_mrr_eur,
     cast(case when movement_type = 'expansion' then mrr_change_eur else 0 end as decimal(14, 2)) as expansion_mrr_eur,
-    cast(case when movement_type = 'reactivation' then mrr_change_eur else 0 end as decimal(14, 2)) as reactivation_mrr_eur,
-    cast(case when movement_type = 'contraction' then mrr_change_eur else 0 end as decimal(14, 2)) as contraction_mrr_eur,
+    cast(case when movement_type = 'reactivation' then mrr_change_eur else 0 end as decimal(14, 2))
+        as reactivation_mrr_eur,
+    cast(case when movement_type = 'contraction' then mrr_change_eur else 0 end as decimal(14, 2))
+        as contraction_mrr_eur,
     cast(case when movement_type = 'churn' then mrr_change_eur else 0 end as decimal(14, 2)) as churned_mrr_eur,
     cast(closing_mrr_eur as decimal(14, 2)) as closing_mrr_eur
 from classified

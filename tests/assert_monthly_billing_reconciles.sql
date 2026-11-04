@@ -8,14 +8,18 @@ with expected as (
     where invoice_status <> 'void'
     group by 1
 ),
+
 actual as (
-    select invoice_month, billed_amount_eur
+    select
+        invoice_month,
+        billed_amount_eur
     from {{ ref('mart_monthly_billing') }}
 )
+
 select
     coalesce(e.invoice_month, a.invoice_month) as invoice_month,
     e.expected_amount_eur,
     a.billed_amount_eur
-from expected e
-full outer join actual a on e.invoice_month = a.invoice_month
+from expected as e
+full outer join actual as a on e.invoice_month = a.invoice_month
 where e.expected_amount_eur is distinct from a.billed_amount_eur

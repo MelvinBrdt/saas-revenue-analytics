@@ -6,7 +6,8 @@ select
     opening_mrr_eur,
     closing_mrr_eur
 from {{ ref('mart_customer_monthly_mrr') }}
-where opening_mrr_eur
+where
+    opening_mrr_eur
     + new_mrr_eur
     + expansion_mrr_eur
     + reactivation_mrr_eur
