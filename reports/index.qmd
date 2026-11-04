@@ -25,6 +25,7 @@ con = duckdb.connect("../data/saas.duckdb", read_only=True)
 MONTHS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"]
 BLUE = "#2a78d6"
 ORANGE = "#eb6834"
+RED = "#e34948"
 plotly_loaded = False
 
 
@@ -38,6 +39,14 @@ def percent(value):
 
 def month_name(day):
     return MONTHS[day.month - 1]
+
+
+def signed_euros(value):
+    return f"{value:+,.0f}".replace(",", "\u00a0") + "\u00a0€"
+
+
+def signed_percent(value):
+    return f"{value * 100:+.1f}".replace(".", ",") + "\u00a0%"
 
 
 def long_date(day):
@@ -156,6 +165,56 @@ table = [
 for row in movements:
     lost = "n/a" if row[6] is None else percent(row[6])
     table.append(f"| {month_name(row[0]).capitalize()} | {euros(row[1])} | {euros(row[2])} | {euros(row[3])} | {euros(row[4])} | {row[5]} | {lost} |")
+display(Markdown("\n".join(table)))
+```
+
+## Sommes-nous au-dessus ou en dessous du budget ?
+
+```{python}
+budget = con.execute("""
+    select
+        budget_month,
+        billed_amount_eur,
+        budget_billed_eur,
+        billed_variance_eur,
+        closing_mrr_eur,
+        budget_closing_mrr_eur,
+        mrr_variance_eur
+    from analytics_marts.mart_budget_vs_actual
+    order by budget_month
+""").fetchall()
+total_billed = sum(row[1] for row in budget)
+total_budget = sum(row[2] for row in budget)
+total_variance = sum(row[3] for row in budget)
+worst_month = min(budget, key=lambda row: row[3])
+last_month = budget[-1]
+
+display(Markdown(
+    f"Sur la période, le facturé s'écarte du budget de {signed_euros(total_variance)} ({signed_percent(total_variance / total_budget)}). "
+    f"L'écart le plus défavorable est en {month_name(worst_month[0])}, à {signed_euros(worst_month[3])}. "
+    f"Fin {month_name(last_month[0])}, le MRR s'écarte de son budget de {signed_euros(last_month[6])}."
+))
+
+figure = go.Figure()
+figure.add_bar(
+    x=[month_name(row[0]) for row in budget],
+    y=[float(row[3]) for row in budget],
+    marker=dict(color=[BLUE if row[3] >= 0 else RED for row in budget], cornerradius=4),
+    text=[signed_euros(row[3]) for row in budget],
+    textposition="outside",
+    cliponaxis=False,
+    hovertemplate="%{x} : %{y:+,.0f} €<extra></extra>",
+)
+figure.update_layout(height=300, yaxis=dict(ticksuffix=" €", zeroline=True, zerolinecolor="#898781", zerolinewidth=1), xaxis=dict(side="bottom"))
+show_chart(figure, "Barres de l'écart mensuel entre le facturé et le budget")
+
+table = [
+    "| Mois | Facturé | Budget | Écart | MRR | Budget | Écart |",
+    "|:---|---:|---:|---:|---:|---:|---:|",
+]
+for row in budget:
+    table.append(f"| {month_name(row[0]).capitalize()} | {euros(row[1])} | {euros(row[2])} | {signed_euros(row[3])} | {euros(row[4])} | {euros(row[5])} | {signed_euros(row[6])} |")
+table.append(f"| **Total** | **{euros(total_billed)}** | **{euros(total_budget)}** | **{signed_euros(total_variance)}** | | | |")
 display(Markdown("\n".join(table)))
 ```
 
