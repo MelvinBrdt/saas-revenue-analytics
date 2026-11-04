@@ -340,6 +340,47 @@ models:
         description: "Part des factures payées après leur échéance."
         data_tests: [not_null]
 
+  - name: mart_budget_vs_actual
+    description: >-
+      Écarts au budget, avec une ligne par mois du calendrier. Un écart positif
+      signifie que le réalisé dépasse le budget. Le réalisé vient des marts de
+      facturation et de MRR, le budget du seed budget_monthly.
+
+    columns:
+      - name: budget_month
+        description: "Premier jour du mois. Clé de granularité du mart."
+        data_tests: [unique, not_null]
+
+      - name: billed_amount_eur
+        description: "Montant facturé sur le mois, en EUR. Zéro si le mois n'a aucune facture."
+        data_tests: [not_null]
+
+      - name: budget_billed_eur
+        description: "Montant facturé prévu au budget, en EUR. Un mois sans budget fait échouer le test."
+        data_tests: [not_null]
+
+      - name: billed_variance_eur
+        description: "Facturé moins budget, en EUR."
+        data_tests: [not_null]
+
+      - name: billed_variance_rate
+        description: "Écart de facturé rapporté au budget. NULL si le budget vaut zéro."
+
+      - name: closing_mrr_eur
+        description: "MRR à la fin du mois, en EUR."
+        data_tests: [not_null]
+
+      - name: budget_closing_mrr_eur
+        description: "MRR de fin de mois prévu au budget, en EUR. Un mois sans budget fait échouer le test."
+        data_tests: [not_null]
+
+      - name: mrr_variance_eur
+        description: "MRR moins budget, en EUR."
+        data_tests: [not_null]
+
+      - name: mrr_variance_rate
+        description: "Écart de MRR rapporté au budget. NULL si le budget vaut zéro."
+
   - name: fct_invoices
     description: >-
       Table de faits à la granularité d'une facture.
@@ -619,3 +660,34 @@ unit_tests:
       rows:
         - {customer_id: C1, paid_invoice_count: 2, total_days_to_pay: 50, avg_days_to_pay: 25.0, late_paid_invoice_count: 1, late_payment_rate: 0.5}
         - {customer_id: C2, paid_invoice_count: 1, total_days_to_pay: 30, avg_days_to_pay: 30.0, late_paid_invoice_count: 0, late_payment_rate: 0}
+
+  - name: test_budget_vs_actual_variances
+    description: >-
+      Un écart positif signifie que le réalisé dépasse le budget. Un mois sans
+      facture compte zéro facturé, et un budget à zéro donne un taux NULL.
+    model: mart_budget_vs_actual
+    given:
+      - input: ref('int_months')
+        rows:
+          - {month_start: '2026-01-01', month_end: '2026-01-31'}
+          - {month_start: '2026-02-01', month_end: '2026-02-28'}
+          - {month_start: '2026-03-01', month_end: '2026-03-31'}
+      - input: ref('budget_monthly')
+        rows:
+          - {budget_month: '2026-01-01', budget_billed_eur: 100.00, budget_closing_mrr_eur: 100.00}
+          - {budget_month: '2026-02-01', budget_billed_eur: 50.00, budget_closing_mrr_eur: 0.00}
+          - {budget_month: '2026-03-01', budget_billed_eur: 100.00, budget_closing_mrr_eur: 100.00}
+      - input: ref('mart_monthly_billing')
+        rows:
+          - {invoice_month: '2026-01-01', billed_amount_eur: 110.00}
+          - {invoice_month: '2026-03-01', billed_amount_eur: 100.00}
+      - input: ref('mart_monthly_mrr')
+        rows:
+          - {mrr_month: '2026-01-01', closing_mrr_eur: 90.00}
+          - {mrr_month: '2026-02-01', closing_mrr_eur: 90.00}
+          - {mrr_month: '2026-03-01', closing_mrr_eur: 100.00}
+    expect:
+      rows:
+        - {budget_month: '2026-01-01', billed_amount_eur: 110.00, budget_billed_eur: 100.00, billed_variance_eur: 10.00, billed_variance_rate: 0.1, closing_mrr_eur: 90.00, budget_closing_mrr_eur: 100.00, mrr_variance_eur: -10.00, mrr_variance_rate: -0.1}
+        - {budget_month: '2026-02-01', billed_amount_eur: 0.00, budget_billed_eur: 50.00, billed_variance_eur: -50.00, billed_variance_rate: -1, closing_mrr_eur: 90.00, budget_closing_mrr_eur: 0.00, mrr_variance_eur: 90.00, mrr_variance_rate: null}
+        - {budget_month: '2026-03-01', billed_amount_eur: 100.00, budget_billed_eur: 100.00, billed_variance_eur: 0.00, billed_variance_rate: 0, closing_mrr_eur: 100.00, budget_closing_mrr_eur: 100.00, mrr_variance_eur: 0.00, mrr_variance_rate: 0}

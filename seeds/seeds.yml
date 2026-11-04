@@ -1,0 +1,21 @@
+
+version: 2
+
+seeds:
+  - name: budget_monthly
+    description: >-
+      Budget mensuel fictif, saisi à la main et versionné dans le dépôt.
+      Une ligne par mois.
+
+    columns:
+      - name: budget_month
+        description: "Premier jour du mois budgété. Clé de granularité du seed."
+        data_tests: [unique, not_null]
+
+      - name: budget_billed_eur
+        description: "Montant facturé prévu sur le mois, en EUR."
+        data_tests: [not_null]
+
+      - name: budget_closing_mrr_eur
+        description: "MRR prévu à la fin du mois, en EUR."
+        data_tests: [not_null]
