@@ -171,13 +171,13 @@ unit_tests:
     given:
       - input: ref('fct_invoices')
         rows:
-          - {customer_id: C001, invoice_date: 2026-01-05, invoice_status: paid, billed_amount_eur: 100.00}
-          - {customer_id: C001, invoice_date: 2026-01-20, invoice_status: void, billed_amount_eur: 0.00}
-          - {customer_id: C001, invoice_date: 2026-01-25, invoice_status: open, billed_amount_eur: 50.00}
-          - {customer_id: C001, invoice_date: 2026-02-03, invoice_status: paid, billed_amount_eur: 100.00}
-          - {customer_id: C002, invoice_date: 2026-01-10, invoice_status: void, billed_amount_eur: 0.00}
+          - {customer_id: C001, invoice_date: '2026-01-05', invoice_status: paid, billed_amount_eur: 100.00}
+          - {customer_id: C001, invoice_date: '2026-01-20', invoice_status: void, billed_amount_eur: 0.00}
+          - {customer_id: C001, invoice_date: '2026-01-25', invoice_status: open, billed_amount_eur: 50.00}
+          - {customer_id: C001, invoice_date: '2026-02-03', invoice_status: paid, billed_amount_eur: 100.00}
+          - {customer_id: C002, invoice_date: '2026-01-10', invoice_status: void, billed_amount_eur: 0.00}
     expect:
       rows:
-        - {customer_id: C001, invoice_month: 2026-01-01, billed_amount_eur: 150.00, issued_invoice_count: 2, paid_invoice_count: 1, open_invoice_count: 1, void_invoice_count: 1}
-        - {customer_id: C001, invoice_month: 2026-02-01, billed_amount_eur: 100.00, issued_invoice_count: 1, paid_invoice_count: 1, open_invoice_count: 0, void_invoice_count: 0}
-        - {customer_id: C002, invoice_month: 2026-01-01, billed_amount_eur: 0.00, issued_invoice_count: 0, paid_invoice_count: 0, open_invoice_count: 0, void_invoice_count: 1}
+        - {customer_id: C001, invoice_month: '2026-01-01', billed_amount_eur: 150.00, issued_invoice_count: 2, paid_invoice_count: 1, open_invoice_count: 1, void_invoice_count: 1}
+        - {customer_id: C001, invoice_month: '2026-02-01', billed_amount_eur: 100.00, issued_invoice_count: 1, paid_invoice_count: 1, open_invoice_count: 0, void_invoice_count: 0}
+        - {customer_id: C002, invoice_month: '2026-01-01', billed_amount_eur: 0.00, issued_invoice_count: 0, paid_invoice_count: 0, open_invoice_count: 0, void_invoice_count: 1}
