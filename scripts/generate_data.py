@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import csv
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -30,19 +30,28 @@ SUBSCRIPTIONS = [
 ]
 
 # Cases the monthly loop cannot produce, appended after it so its invoice ids stay stable.
-# subscription_id, invoice_date, amount_eur, invoice_status
+# subscription_id, invoice_date, amount_eur, invoice_status, paid_date
 EDGE_CASE_INVOICES = [
     # Voided invoice next to a paid one in the same customer month.
-    ("S002", "2026-03-15", "149.00", "void"),
-    # Second paid invoice in the same customer month, on the last day of the month.
-    ("S003", "2026-03-31", "49.00", "paid"),
+    ("S002", "2026-03-15", "149.00", "void", ""),
+    # Second invoice in the same customer month, on the last day of the month, long overdue.
+    ("S003", "2026-03-31", "49.00", "open", ""),
     # Issued after the subscription ended on 2026-04-30.
-    ("S004", "2026-05-10", "30.00", "paid"),
+    ("S004", "2026-05-10", "30.00", "paid", "2026-06-05"),
     # Open next to a paid invoice in the same customer month, with an unnormalized raw status.
-    ("S005", "2026-05-20", "120.00", " OPEN"),
+    ("S005", "2026-05-20", "120.00", " OPEN", ""),
 ]
 
 MONTHS = [date(2026, m, 1) for m in range(1, 7)]
+
+PAYMENT_TERM_DAYS = 30
+
+# Days each subscription takes to pay. Above the payment term, the customer pays late.
+PAYMENT_DELAY_DAYS = {"S001": 14, "S002": 45, "S003": 28, "S004": 20, "S005": 35, "S006": 25, "S007": 10}
+
+
+def due_date(invoice_date: date) -> str:
+    return (invoice_date + timedelta(days=PAYMENT_TERM_DAYS)).isoformat()
 
 
 def write_csv(name: str, header: list[str], rows: list[tuple[str, ...]]) -> None:
@@ -68,16 +77,18 @@ def main() -> None:
                 continue
             # Fixed statuses keep the expected results in the README reproducible.
             status = "paid"
-            if month == date(2026, 6, 1) and sub_id in ("S003", "S005"):
+            # Unpaid at the June 30 close. S002 pays too slowly to settle its June invoice by then.
+            if month == date(2026, 6, 1) and sub_id in ("S002", "S003", "S005"):
                 status = "open"
             if month == date(2026, 4, 1) and sub_id == "S004":
                 status = "void"
-            invoices.append((f"I{next_id:04}", sub_id, month.isoformat(), price, status))
+            paid_date = (month + timedelta(days=PAYMENT_DELAY_DAYS[sub_id])).isoformat() if status == "paid" else ""
+            invoices.append((f"I{next_id:04}", sub_id, month.isoformat(), due_date(month), paid_date, price, status))
             next_id += 1
-    for sub_id, invoice_date, price, status in EDGE_CASE_INVOICES:
-        invoices.append((f"I{next_id:04}", sub_id, invoice_date, price, status))
+    for sub_id, invoice_date, price, status, paid_date in EDGE_CASE_INVOICES:
+        invoices.append((f"I{next_id:04}", sub_id, invoice_date, due_date(date.fromisoformat(invoice_date)), paid_date, price, status))
         next_id += 1
-    write_csv("invoices.csv", ["invoice_id", "subscription_id", "invoice_date", "amount_eur", "invoice_status"], invoices)
+    write_csv("invoices.csv", ["invoice_id", "subscription_id", "invoice_date", "due_date", "paid_date", "amount_eur", "invoice_status"], invoices)
 
 
 if __name__ == "__main__":

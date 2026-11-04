@@ -253,6 +253,93 @@ models:
           Date de début du premier abonnement du client.
           NULL si le client n'a jamais eu d'abonnement.
 
+  - name: mart_open_invoices
+    description: >-
+      Balance âgée : une ligne par facture en attente de paiement à la date
+      d'arrêt, soit le dernier jour du dernier mois du calendrier. Le retard
+      se calcule par rapport à l'échéance, pour que les résultats ne dépendent
+      pas de la date d'exécution.
+
+    columns:
+      - name: invoice_id
+        description: "Identifiant de la facture. Clé de granularité du mart."
+        data_tests: [unique, not_null]
+
+      - name: customer_id
+        description: "Identifiant du client."
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_customers')
+                field: customer_id
+
+      - name: invoice_date
+        description: "Date d'émission de la facture."
+        data_tests: [not_null]
+
+      - name: due_date
+        description: "Date d'échéance de la facture."
+        data_tests: [not_null]
+
+      - name: amount_eur
+        description: "Montant restant à encaisser, en EUR."
+        data_tests: [not_null]
+
+      - name: closing_date
+        description: "Date d'arrêt utilisée pour calculer le retard."
+        data_tests: [not_null]
+
+      - name: days_overdue
+        description: "Nombre de jours de retard à la date d'arrêt. Zéro si la facture n'est pas échue."
+        data_tests: [not_null]
+
+      - name: aging_bucket
+        description: "Tranche de retard de la facture."
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['not_due', '1_30_days', '31_60_days', '61_90_days', 'over_90_days']
+
+  - name: mart_customer_payment_behavior
+    description: >-
+      Comportement de paiement, avec une ligne par client ayant au moins une
+      facture payée. Les factures en attente et annulées n'y entrent pas.
+
+    columns:
+      - name: customer_id
+        description: "Identifiant du client. Clé de granularité du mart."
+        data_tests:
+          - unique
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_customers')
+                field: customer_id
+
+      - name: paid_invoice_count
+        description: "Nombre de factures payées."
+        data_tests: [not_null]
+
+      - name: total_days_to_pay
+        description: >-
+          Somme des délais de paiement, en jours. Elle permet de calculer une
+          moyenne sur plusieurs clients sans faire la moyenne de moyennes.
+        data_tests: [not_null]
+
+      - name: avg_days_to_pay
+        description: "Délai moyen entre la facture et son paiement, en jours."
+        data_tests: [not_null]
+
+      - name: late_paid_invoice_count
+        description: "Nombre de factures payées après leur échéance."
+        data_tests: [not_null]
+
+      - name: late_payment_rate
+        description: "Part des factures payées après leur échéance."
+        data_tests: [not_null]
+
   - name: fct_invoices
     description: >-
       Table de faits à la granularité d'une facture.
@@ -294,6 +381,18 @@ models:
         description: "Date d'émission de la facture."
         data_tests:
           - not_null
+
+      - name: due_date
+        description: "Date d'échéance de la facture."
+
+      - name: paid_date
+        description: "Date de paiement de la facture. NULL si elle n'est pas payée."
+
+      - name: days_to_pay
+        description: "Nombre de jours entre la facture et son paiement. NULL si elle n'est pas payée."
+
+      - name: is_paid_late
+        description: "Vrai si la facture a été payée après son échéance. NULL si elle n'est pas payée."
 
       - name: invoice_status
         description: >-
@@ -447,3 +546,76 @@ unit_tests:
       rows:
         - {customer_id: C1, customer_name: Alpha, country_code: FR, created_date: '2025-12-01', first_subscription_date: '2026-01-01'}
         - {customer_id: C2, customer_name: Beta, country_code: DE, created_date: '2026-01-15', first_subscription_date: null}
+
+  - name: test_fct_invoices_payment_fields
+    description: >-
+      Le délai se compte depuis la date de facture. Payer le jour de l'échéance
+      n'est pas un retard, et une facture non payée n'a ni délai ni retard.
+    model: fct_invoices
+    given:
+      - input: ref('stg_billing__invoices')
+        rows:
+          - {invoice_id: I1, subscription_id: S1, invoice_date: '2026-01-01', due_date: '2026-01-31', paid_date: '2026-01-31', invoice_status: paid, amount_eur: 100.00}
+          - {invoice_id: I2, subscription_id: S1, invoice_date: '2026-02-01', due_date: '2026-03-03', paid_date: '2026-03-04', invoice_status: paid, amount_eur: 100.00}
+          - {invoice_id: I3, subscription_id: S1, invoice_date: '2026-03-01', due_date: '2026-03-31', paid_date: null, invoice_status: open, amount_eur: 100.00}
+      - input: ref('stg_billing__subscriptions')
+        rows:
+          - {subscription_id: S1, customer_id: C1}
+    expect:
+      rows:
+        - {invoice_id: I1, due_date: '2026-01-31', paid_date: '2026-01-31', days_to_pay: 30, is_paid_late: false}
+        - {invoice_id: I2, due_date: '2026-03-03', paid_date: '2026-03-04', days_to_pay: 31, is_paid_late: true}
+        - {invoice_id: I3, due_date: '2026-03-31', paid_date: null, days_to_pay: null, is_paid_late: null}
+
+  - name: test_open_invoices_aging_buckets
+    description: >-
+      Chaque limite de tranche est testée au jour près. Seules les factures open
+      entrent dans le mart, et la date d'arrêt est le dernier jour du calendrier.
+    model: mart_open_invoices
+    given:
+      - input: ref('int_months')
+        rows:
+          - {month_start: '2026-05-01', month_end: '2026-05-31'}
+          - {month_start: '2026-06-01', month_end: '2026-06-30'}
+      - input: ref('fct_invoices')
+        rows:
+          - {invoice_id: A, invoice_status: open, due_date: '2026-07-01', amount_eur: 10.00}
+          - {invoice_id: B, invoice_status: open, due_date: '2026-06-30', amount_eur: 10.00}
+          - {invoice_id: C, invoice_status: open, due_date: '2026-06-29', amount_eur: 10.00}
+          - {invoice_id: D, invoice_status: open, due_date: '2026-05-31', amount_eur: 10.00}
+          - {invoice_id: E, invoice_status: open, due_date: '2026-05-30', amount_eur: 10.00}
+          - {invoice_id: F, invoice_status: open, due_date: '2026-05-01', amount_eur: 10.00}
+          - {invoice_id: G, invoice_status: open, due_date: '2026-04-30', amount_eur: 10.00}
+          - {invoice_id: H, invoice_status: open, due_date: '2026-04-01', amount_eur: 10.00}
+          - {invoice_id: I, invoice_status: open, due_date: '2026-03-31', amount_eur: 10.00}
+          - {invoice_id: J, invoice_status: paid, due_date: '2026-01-31', amount_eur: 10.00}
+          - {invoice_id: K, invoice_status: void, due_date: '2026-01-31', amount_eur: 10.00}
+    expect:
+      rows:
+        - {invoice_id: A, closing_date: '2026-06-30', days_overdue: 0, aging_bucket: not_due}
+        - {invoice_id: B, closing_date: '2026-06-30', days_overdue: 0, aging_bucket: not_due}
+        - {invoice_id: C, closing_date: '2026-06-30', days_overdue: 1, aging_bucket: 1_30_days}
+        - {invoice_id: D, closing_date: '2026-06-30', days_overdue: 30, aging_bucket: 1_30_days}
+        - {invoice_id: E, closing_date: '2026-06-30', days_overdue: 31, aging_bucket: 31_60_days}
+        - {invoice_id: F, closing_date: '2026-06-30', days_overdue: 60, aging_bucket: 31_60_days}
+        - {invoice_id: G, closing_date: '2026-06-30', days_overdue: 61, aging_bucket: 61_90_days}
+        - {invoice_id: H, closing_date: '2026-06-30', days_overdue: 90, aging_bucket: 61_90_days}
+        - {invoice_id: I, closing_date: '2026-06-30', days_overdue: 91, aging_bucket: over_90_days}
+
+  - name: test_customer_payment_behavior_uses_paid_invoices
+    description: >-
+      Les moyennes et les taux ne portent que sur les factures payées. Un client
+      sans facture payée n'a pas de ligne.
+    model: mart_customer_payment_behavior
+    given:
+      - input: ref('fct_invoices')
+        rows:
+          - {invoice_id: I1, customer_id: C1, invoice_status: paid, days_to_pay: 10, is_paid_late: false}
+          - {invoice_id: I2, customer_id: C1, invoice_status: paid, days_to_pay: 40, is_paid_late: true}
+          - {invoice_id: I3, customer_id: C1, invoice_status: open, days_to_pay: null, is_paid_late: null}
+          - {invoice_id: I4, customer_id: C2, invoice_status: paid, days_to_pay: 30, is_paid_late: false}
+          - {invoice_id: I5, customer_id: C3, invoice_status: void, days_to_pay: null, is_paid_late: null}
+    expect:
+      rows:
+        - {customer_id: C1, paid_invoice_count: 2, total_days_to_pay: 50, avg_days_to_pay: 25.0, late_paid_invoice_count: 1, late_payment_rate: 0.5}
+        - {customer_id: C2, paid_invoice_count: 1, total_days_to_pay: 30, avg_days_to_pay: 30.0, late_paid_invoice_count: 0, late_payment_rate: 0}

@@ -23,6 +23,10 @@ final as (
         i.subscription_id,
         s.customer_id,
         i.invoice_date,
+        i.due_date,
+        i.paid_date,
+        i.paid_date - i.invoice_date as days_to_pay,
+        i.paid_date > i.due_date as is_paid_late,
         i.invoice_status,
         i.amount_eur,
 
