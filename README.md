@@ -6,7 +6,7 @@ Projet pédagogique **100 % synthétique** pour apprendre les fondamentaux dbt d
 
 - Sources : `raw.customers`, `raw.subscriptions`, `raw.invoices`
 - Staging : nettoyage, conversion de types, tests d'intégrité
-- Mart : `mart_monthly_billing`, **une ligne par mois d'émission**
+- Marts : `mart_monthly_billing`, **une ligne par mois d'émission**, et `mart_customer_monthly_billing`, **une ligne par client et par mois ayant au moins une facture**
 - KPI : montant facturé, incluant `paid` et `open`, excluant `void`
 - **Important** : facturé != MRR != reconnu en comptabilité != encaissé.
 - Hypothèses simplificatrices : EUR, sans TVA, avoirs, remises ni factures multi-lignes.
@@ -27,7 +27,7 @@ dbt build --profiles-dir .
 dbt docs generate --profiles-dir .
 ```
 
-La base locale se trouve dans `data/saas.duckdb` (non versionnée). Les vues staging sont créées dans `analytics_staging`, et le mart dans `analytics_marts`. DuckDB est un moteur local, sans serveur ni compte.
+La base locale se trouve dans `data/saas.duckdb` (non versionnée). Les vues staging sont créées dans `analytics_staging`, et les marts dans `analytics_marts`. DuckDB est un moteur local, sans serveur ni compte.
 
 ## Architecture
 
@@ -53,6 +53,7 @@ La facture annulée (`void`) d’avril ne contribue pas aux 695,00 EUR.
 - Tests sources et staging : clés `unique`, `not_null`, valeurs permises, relations clients/abonnements/factures
 - Test singulier : le total du mart se réconcilie avec les factures admissibles en staging
 - Test singulier `assert_invoice_amount_non_negative` : vérifie qu'aucune facture ne possède un montant négatif. Ce test a été validé en introduisant volontairement une anomalie, puis en restaurant les données.
+- Tests de `mart_customer_monthly_billing` : unicité du couple client et mois, réconciliation mensuelle avec `mart_monthly_billing`, et test unitaire d'agrégation de plusieurs factures d'un même client sur un même mois
 - Commande : `dbt build --profiles-dir .`
 
 ## Travail personnel suggéré
