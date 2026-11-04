@@ -30,15 +30,15 @@ plotly_loaded = False
 
 
 def euros(value):
-    return f"{value:,.0f}".replace(",", " ") + " €"
+    return f"{value:,.0f}".replace(",", "\u00a0") + "\u00a0€"
 
 
 def signed_euros(value):
-    return f"{value:+,.0f}".replace(",", " ") + " €"
+    return f"{value:+,.0f}".replace(",", "\u00a0") + "\u00a0€"
 
 
 def percent(value):
-    return f"{value * 100:.1f}".replace(".", ",") + " %"
+    return f"{value * 100:.1f}".replace(".", ",") + "\u00a0%"
 
 
 def month_name(day):
@@ -123,6 +123,22 @@ payments = con.execute("""
     order by p.avg_days_to_pay
 """).fetchall()
 term_days = con.execute("select max(due_date - invoice_date) from analytics_marts.fct_invoices").fetchone()[0]
+cursor = con.execute("select * from analytics_marts.mart_finance_kpis")
+kpi = dict(zip([column[0] for column in cursor.description], cursor.fetchone()))
+plans = con.execute("""
+    select plan_code, active_subscription_count, closing_mrr_eur, mrr_share
+    from analytics_marts.mart_monthly_mrr_by_plan
+    where mrr_month = (select max(mrr_month) from analytics_marts.mart_monthly_mrr_by_plan)
+    order by closing_mrr_eur desc
+""").fetchall()
+countries = con.execute("""
+    select d.country_code, sum(b.billed_amount_eur) as billed_amount_eur
+    from analytics_marts.mart_customer_monthly_billing as b
+    inner join analytics_marts.dim_customers as d
+        on b.customer_id = d.customer_id
+    group by 1
+    order by 2 desc
+""").fetchall()
 
 first_month, last_month = budget[0], budget[-1]
 total_billed = sum(row[1] for row in budget)
@@ -132,11 +148,8 @@ worst_billed = min(budget, key=lambda row: row[3])
 worst_churn = min(movements, key=lambda row: row[3])
 largest_mrr_gap = min(row[6] for row in budget)
 gap_months = [row for row in budget if row[6] == largest_mrr_gap]
-open_total = sum(invoice[3] for invoice in open_invoices)
-overdue_total = sum(invoice[3] for invoice in open_invoices if invoice[4] > 0)
-paid_count = sum(row[1] for row in payments)
-late_count = sum(row[4] for row in payments)
-average_days = sum(row[2] for row in payments) / paid_count
+open_total = kpi["open_amount_eur"]
+overdue_total = kpi["overdue_amount_eur"]
 top_name, top_amount = customers[-1]
 closing_date = open_invoices[0][6]
 
@@ -148,7 +161,7 @@ tiles = [
     ("CA facturé HT", euros(total_billed)),
     (f"MRR fin {month_name(last_month[0])}", euros(last_month[4])),
     ("Créances échues", euros(overdue_total)),
-    ("Délai moyen de paiement", f"{average_days:.0f} jours"),
+    ("DSO", f"{kpi['days_sales_outstanding']:.0f}\u00a0jours"),
 ]
 display(HTML(
     '<div class="tiles">'
@@ -172,10 +185,29 @@ if largest_mrr_gap < 0:
 display(Markdown(f"""
 ## Synthèse
 
-- **Activité.** Le CA facturé HT atteint {euros(total_billed)}, soit {percent(total_billed / total_budget)} du budget.
-- **Revenu récurrent.** Le MRR termine {month_name(last_month[0])} à {euros(last_month[4])}, soit {percent(last_month[4] / last_month[5])} de l'objectif.{churn_sentence}{attention}
-- **Encaissements.** L'encours client s'élève à {euros(open_total)}, dont {euros(overdue_total)} de créances échues ({percent(overdue_total / open_total)}).
+- **Activité.** Le CA facturé HT atteint {euros(total_billed)}, soit {percent(kpi['billed_budget_attainment_rate'])} du budget.
+- **Revenu récurrent.** Le MRR termine {month_name(last_month[0])} à {euros(last_month[4])}, soit {percent(kpi['mrr_budget_attainment_rate'])} de l'objectif.{churn_sentence} Sur trois mois, la rétention nette atteint {percent(kpi['net_revenue_retention_rate'])}, pour une rétention brute de {percent(kpi['gross_revenue_retention_rate'])}.{attention}
+- **Encaissements.** L'encours client s'élève à {euros(open_total)}, dont {euros(overdue_total)} de créances échues ({percent(kpi['overdue_share_rate'])}). Le DSO est de {kpi['days_sales_outstanding']:.0f} jours.
 """))
+```
+
+## Indicateurs clés
+
+```{python}
+table = [
+    "| Indicateur | Valeur | Lecture |",
+    "|:---|---:|:---|",
+    f"| ARR | {euros(kpi['arr_eur'])} | MRR de clôture annualisé |",
+    f"| ARPA | {euros(kpi['arpa_eur'])} | MRR moyen par client |",
+    f"| Rétention nette (NRR) | {percent(kpi['net_revenue_retention_rate'])} | Sur trois mois, expansion comprise |",
+    f"| Rétention brute (GRR) | {percent(kpi['gross_revenue_retention_rate'])} | Sur trois mois, hors expansion |",
+    f"| Réalisation du budget de CA | {percent(kpi['billed_budget_attainment_rate'])} | Sur la période |",
+    f"| Réalisation du budget de MRR | {percent(kpi['mrr_budget_attainment_rate'])} | À la clôture |",
+    f"| DSO | {kpi['days_sales_outstanding']:.0f}\u00a0jours | Encours rapporté au CA de la période |",
+    f"| Part échue de l'encours | {percent(kpi['overdue_share_rate'])} | À la date d'arrêt |",
+    f"| Concentration | {percent(kpi['top_3_customers_share'])} | Part des trois premiers clients dans le CA |",
+]
+display(Markdown("\n".join(table)))
 ```
 
 ## Réalisé par rapport au budget
@@ -249,12 +281,23 @@ for row in movements:
     churn = "n/a" if row[6] is None else percent(row[6])
     table.append(f"| {month_name(row[0]).capitalize()} | {euros(row[1])} | {euros(row[2])} | {euros(row[3])} | {euros(row[4])} | {row[5]} | {churn} |")
 display(Markdown("\n".join(table)))
+
+table = [
+    f"| Plan, fin {month_name(last_month[0])} | Abonnements | MRR | Part |",
+    "|:---|---:|---:|---:|",
+]
+for plan_code, subscription_count, plan_mrr, share in plans:
+    table.append(f"| {plan_code.capitalize()} | {subscription_count} | {euros(plan_mrr)} | {percent(share)} |")
+display(Markdown("\n".join(table)))
 ```
 
 ## Concentration du CA
 
 ```{python}
-display(Markdown(f"{top_name} représente {percent(top_amount / total_billed)} du CA facturé sur la période."))
+display(Markdown(
+    f"{top_name} représente {percent(kpi['top_customer_share'])} du CA facturé sur la période, "
+    f"et les trois premiers clients {percent(kpi['top_3_customers_share'])}."
+))
 
 figure = go.Figure()
 figure.add_bar(
@@ -269,6 +312,11 @@ figure.add_bar(
 )
 figure.update_layout(height=300, xaxis=dict(visible=False, range=[0, float(top_amount) * 1.18]), yaxis=dict(automargin=True))
 show_chart(figure, "Barres du CA facturé par client")
+
+table = ["| Pays | CA facturé | Part |", "|:---|---:|---:|"]
+for country_code, country_billed in countries:
+    table.append(f"| {country_code} | {euros(country_billed)} | {percent(country_billed / total_billed)} |")
+display(Markdown("\n".join(table)))
 ```
 
 ## Encours client et balance âgée
@@ -305,8 +353,9 @@ display(Markdown("\n".join(table)))
 
 ```{python}
 display(Markdown(
-    f"Les clients règlent en {average_days:.0f} jours en moyenne, pour une échéance à {term_days} jours. "
-    f"{percent(late_count / paid_count)} des factures réglées l'ont été après échéance. "
+    f"Les clients règlent en {kpi['avg_days_to_pay']:.0f} jours par facture en moyenne, pour une échéance à {term_days} jours. "
+    f"Pondéré par les montants, ce délai passe à {kpi['amount_weighted_days_to_pay']:.0f} jours. "
+    f"{percent(kpi['late_payment_rate'])} des factures réglées l'ont été après échéance. "
     "Les barres hachurées signalent les clients dont le délai moyen dépasse l'échéance."
 ))
 
@@ -333,8 +382,13 @@ show_chart(figure, "Barres du délai moyen de paiement par client, avec l'éché
 - **CA facturé HT :** montant des factures payées ou en attente, hors factures annulées.
 - **MRR :** prix mensuel des abonnements actifs le dernier jour du mois.
 - **Churn brut :** MRR perdu sur le mois, rapporté au MRR d'ouverture.
+- **ARR :** MRR de clôture multiplié par 12. Ce n'est pas une prévision.
+- **ARPA :** MRR de clôture divisé par le nombre de clients.
+- **Rétention nette (NRR) :** MRR actuel des clients présents il y a trois mois, rapporté à leur MRR de l'époque.
+- **Rétention brute (GRR) :** même calcul sans l'expansion. L'écart avec le NRR montre ce que l'expansion compense.
 - **Encours client :** factures émises et non réglées à la date d'arrêt.
 - **Créance échue :** facture non réglée dont l'échéance est dépassée à la date d'arrêt.
+- **DSO :** encours client rapporté au CA facturé, multiplié par le nombre de jours de la période. Il est calculé ici hors taxes.
 
 ::: {.report-note}
 ```{python}
