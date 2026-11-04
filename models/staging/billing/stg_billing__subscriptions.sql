@@ -7,6 +7,7 @@ select
     trim(customer_id) as customer_id,
     lower(trim(plan_code)) as plan_code,
     cast(started_at as date) as started_date,
+    -- Caution: try_cast turns an unreadable end date into NULL, which reads as an active subscription.
     try_cast(nullif(trim(ended_at), '') as date) as ended_date,
     cast(monthly_price_eur as decimal(12, 2)) as monthly_price_eur
 from source

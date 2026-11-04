@@ -66,6 +66,7 @@ def main() -> None:
             end_date = date.fromisoformat(end) if end else None
             if start_date > month or (end_date is not None and end_date < month):
                 continue
+            # Fixed statuses keep the expected results in the README reproducible.
             status = "paid"
             if month == date(2026, 6, 1) and sub_id in ("S003", "S005"):
                 status = "open"
