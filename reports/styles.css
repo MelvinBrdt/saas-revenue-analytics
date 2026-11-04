@@ -1,3 +1,8 @@
+.report-period {
+  color: #52514e;
+  font-size: 1.1rem;
+}
+
 .tiles {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
