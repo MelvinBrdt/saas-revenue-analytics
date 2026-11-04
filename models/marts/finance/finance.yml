@@ -226,6 +226,33 @@ models:
           Part des clients d'ouverture perdus sur le mois.
           NULL si le mois s'ouvre sans client.
 
+  - name: dim_customers
+    description: >-
+      Référentiel des clients, avec une ligne par client. Il apporte le nom
+      et le pays aux analyses, y compris pour un client sans abonnement.
+
+    columns:
+      - name: customer_id
+        description: "Identifiant du client. Clé de granularité du modèle."
+        data_tests: [unique, not_null]
+
+      - name: customer_name
+        description: "Nom du client."
+        data_tests: [not_null]
+
+      - name: country_code
+        description: "Code pays du client, en majuscules."
+        data_tests: [not_null]
+
+      - name: created_date
+        description: "Date de création du client dans le CRM."
+        data_tests: [not_null]
+
+      - name: first_subscription_date
+        description: >-
+          Date de début du premier abonnement du client.
+          NULL si le client n'a jamais eu d'abonnement.
+
   - name: fct_invoices
     description: >-
       Table de faits à la granularité d'une facture.
@@ -401,3 +428,22 @@ unit_tests:
         - {mrr_month: '2026-03-01', opening_mrr_eur: 50.00, new_mrr_eur: 0.00, expansion_mrr_eur: 20.00, reactivation_mrr_eur: 30.00, contraction_mrr_eur: 0.00, churned_mrr_eur: 0.00, closing_mrr_eur: 100.00, opening_customer_count: 1, new_customer_count: 0, reactivated_customer_count: 1, churned_customer_count: 0, closing_customer_count: 2, gross_mrr_churn_rate: 0, customer_churn_rate: 0}
         - {mrr_month: '2026-04-01', opening_mrr_eur: 100.00, new_mrr_eur: 0.00, expansion_mrr_eur: 0.00, reactivation_mrr_eur: 0.00, contraction_mrr_eur: 0.00, churned_mrr_eur: -100.00, closing_mrr_eur: 0.00, opening_customer_count: 2, new_customer_count: 0, reactivated_customer_count: 0, churned_customer_count: 2, closing_customer_count: 0, gross_mrr_churn_rate: 1, customer_churn_rate: 1}
         - {mrr_month: '2026-05-01', opening_mrr_eur: 0.00, new_mrr_eur: 0.00, expansion_mrr_eur: 0.00, reactivation_mrr_eur: 0.00, contraction_mrr_eur: 0.00, churned_mrr_eur: 0.00, closing_mrr_eur: 0.00, opening_customer_count: 0, new_customer_count: 0, reactivated_customer_count: 0, churned_customer_count: 0, closing_customer_count: 0, gross_mrr_churn_rate: null, customer_churn_rate: null}
+
+  - name: test_dim_customers_keeps_one_row_per_customer
+    description: >-
+      Un client avec deux abonnements garde une seule ligne et sa date de
+      début la plus ancienne. Un client sans abonnement reste présent.
+    model: dim_customers
+    given:
+      - input: ref('stg_crm__customers')
+        rows:
+          - {customer_id: C1, customer_name: Alpha, country_code: FR, created_date: '2025-12-01'}
+          - {customer_id: C2, customer_name: Beta, country_code: DE, created_date: '2026-01-15'}
+      - input: ref('stg_billing__subscriptions')
+        rows:
+          - {subscription_id: S2, customer_id: C1, started_date: '2026-06-01'}
+          - {subscription_id: S1, customer_id: C1, started_date: '2026-01-01'}
+    expect:
+      rows:
+        - {customer_id: C1, customer_name: Alpha, country_code: FR, created_date: '2025-12-01', first_subscription_date: '2026-01-01'}
+        - {customer_id: C2, customer_name: Beta, country_code: DE, created_date: '2026-01-15', first_subscription_date: null}
