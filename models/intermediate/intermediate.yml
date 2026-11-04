@@ -17,11 +17,38 @@ models:
         description: "Dernier jour du mois."
         data_tests: [not_null]
 
+  - name: int_subscription_monthly_mrr
+    description: >-
+      MRR de chaque abonnement à la fin de chaque mois, avec une ligne par
+      abonnement et par mois où il est actif. C'est la seule définition du MRR
+      du projet. Un abonnement qui se termine le dernier jour du mois n'est
+      plus compté ce mois-là.
+
+    columns:
+      - name: subscription_id
+        description: "Identifiant de l'abonnement. Clé de granularité avec mrr_month."
+        data_tests: [not_null]
+
+      - name: customer_id
+        description: "Identifiant du client."
+        data_tests: [not_null]
+
+      - name: plan_code
+        description: "Code du plan souscrit."
+        data_tests: [not_null]
+
+      - name: mrr_month
+        description: "Premier jour du mois mesuré. Clé de granularité avec subscription_id."
+        data_tests: [not_null]
+
+      - name: mrr_eur
+        description: "Prix mensuel de l'abonnement, en EUR."
+        data_tests: [not_null]
+
   - name: int_customer_monthly_mrr
     description: >-
       MRR de chaque client à la fin de chaque mois, avec une ligne par
-      client et par mois où au moins un abonnement est actif. Un abonnement
-      qui se termine le dernier jour du mois n'est plus compté ce mois-là.
+      client et par mois où au moins un abonnement est actif.
 
     columns:
       - name: customer_id
@@ -33,7 +60,7 @@ models:
         data_tests: [not_null]
 
       - name: mrr_eur
-        description: "Somme des prix mensuels des abonnements actifs à la fin du mois, en EUR."
+        description: "Somme du MRR des abonnements actifs du client, en EUR."
         data_tests: [not_null]
 
       - name: active_subscription_count
@@ -62,12 +89,11 @@ unit_tests:
         - {month_start: '2026-01-01', month_end: '2026-01-31'}
         - {month_start: '2026-02-01', month_end: '2026-02-28'}
 
-  - name: test_int_customer_monthly_mrr_uses_month_end_snapshot
+  - name: test_int_subscription_monthly_mrr_uses_month_end_snapshot
     description: >-
       Un abonnement démarré le dernier jour du mois compte dans ce mois.
-      Un abonnement terminé le dernier jour du mois n'y compte plus, et
-      plusieurs abonnements d'un client s'additionnent.
-    model: int_customer_monthly_mrr
+      Un abonnement terminé le dernier jour du mois n'y compte plus.
+    model: int_subscription_monthly_mrr
     given:
       - input: ref('int_months')
         rows:
@@ -75,12 +101,27 @@ unit_tests:
           - {month_start: '2026-02-01', month_end: '2026-02-28'}
       - input: ref('stg_billing__subscriptions')
         rows:
-          - {subscription_id: S1, customer_id: C1, started_date: '2026-01-01', ended_date: null, monthly_price_eur: 100.00}
-          - {subscription_id: S2, customer_id: C1, started_date: '2026-02-28', ended_date: null, monthly_price_eur: 50.00}
-          - {subscription_id: S3, customer_id: C2, started_date: '2026-01-01', ended_date: '2026-01-31', monthly_price_eur: 30.00}
-          - {subscription_id: S4, customer_id: C3, started_date: '2026-01-01', ended_date: '2026-02-15', monthly_price_eur: 20.00}
+          - {subscription_id: S1, customer_id: C1, plan_code: starter, started_date: '2026-01-01', ended_date: null, monthly_price_eur: 100.00}
+          - {subscription_id: S2, customer_id: C1, plan_code: growth, started_date: '2026-02-28', ended_date: null, monthly_price_eur: 50.00}
+          - {subscription_id: S3, customer_id: C2, plan_code: starter, started_date: '2026-01-01', ended_date: '2026-01-31', monthly_price_eur: 30.00}
+          - {subscription_id: S4, customer_id: C3, plan_code: starter, started_date: '2026-01-01', ended_date: '2026-02-15', monthly_price_eur: 20.00}
     expect:
       rows:
-        - {customer_id: C1, mrr_month: '2026-01-01', mrr_eur: 100.00, active_subscription_count: 1}
+        - {subscription_id: S1, customer_id: C1, plan_code: starter, mrr_month: '2026-01-01', mrr_eur: 100.00}
+        - {subscription_id: S1, customer_id: C1, plan_code: starter, mrr_month: '2026-02-01', mrr_eur: 100.00}
+        - {subscription_id: S2, customer_id: C1, plan_code: growth, mrr_month: '2026-02-01', mrr_eur: 50.00}
+        - {subscription_id: S4, customer_id: C3, plan_code: starter, mrr_month: '2026-01-01', mrr_eur: 20.00}
+
+  - name: test_int_customer_monthly_mrr_sums_subscriptions
+    description: "Plusieurs abonnements d'un client s'additionnent sur le mois."
+    model: int_customer_monthly_mrr
+    given:
+      - input: ref('int_subscription_monthly_mrr')
+        rows:
+          - {subscription_id: S1, customer_id: C1, mrr_month: '2026-02-01', mrr_eur: 100.00}
+          - {subscription_id: S2, customer_id: C1, mrr_month: '2026-02-01', mrr_eur: 50.00}
+          - {subscription_id: S3, customer_id: C2, mrr_month: '2026-02-01', mrr_eur: 20.00}
+    expect:
+      rows:
         - {customer_id: C1, mrr_month: '2026-02-01', mrr_eur: 150.00, active_subscription_count: 2}
-        - {customer_id: C3, mrr_month: '2026-01-01', mrr_eur: 20.00, active_subscription_count: 1}
+        - {customer_id: C2, mrr_month: '2026-02-01', mrr_eur: 20.00, active_subscription_count: 1}
