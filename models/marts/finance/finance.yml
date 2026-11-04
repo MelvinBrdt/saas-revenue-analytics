@@ -381,6 +381,123 @@ models:
       - name: mrr_variance_rate
         description: "Écart de MRR rapporté au budget. NULL si le budget vaut zéro."
 
+  - name: mart_monthly_mrr_by_plan
+    description: >-
+      MRR de fin de mois par plan, avec une ligne par plan et par mois où il
+      compte au moins un abonnement actif. Se réconcilie avec mart_monthly_mrr.
+
+    columns:
+      - name: plan_code
+        description: "Code du plan. Clé de granularité avec mrr_month."
+        data_tests: [not_null]
+
+      - name: mrr_month
+        description: "Premier jour du mois mesuré. Clé de granularité avec plan_code."
+        data_tests: [not_null]
+
+      - name: closing_mrr_eur
+        description: "MRR du plan à la fin du mois, en EUR."
+        data_tests: [not_null]
+
+      - name: active_subscription_count
+        description: "Nombre d'abonnements actifs du plan à la fin du mois."
+        data_tests: [not_null]
+
+      - name: mrr_share
+        description: "Part du plan dans le MRR du mois."
+        data_tests: [not_null]
+
+  - name: mart_finance_kpis
+    description: >-
+      Indicateurs clés à la date d'arrêt, sur une seule ligne. Les indicateurs
+      de période portent sur tout le calendrier, et la rétention compare le
+      dernier mois à trois mois plus tôt. Les taux illustrent une méthode sur
+      des données fictives.
+
+    columns:
+      - name: closing_date
+        description: "Date d'arrêt : dernier jour du calendrier."
+        data_tests: [unique, not_null]
+
+      - name: retention_base_month
+        description: "Mois de référence de la rétention : trois mois avant le dernier mois."
+
+      - name: closing_mrr_eur
+        description: "MRR à la date d'arrêt, en EUR."
+        data_tests: [not_null]
+
+      - name: closing_customer_count
+        description: "Nombre de clients avec du MRR à la date d'arrêt."
+        data_tests: [not_null]
+
+      - name: arr_eur
+        description: "Revenu récurrent annualisé : MRR de clôture multiplié par 12. Ce n'est pas une prévision."
+        data_tests: [not_null]
+
+      - name: arpa_eur
+        description: "Revenu moyen par client : MRR de clôture divisé par le nombre de clients."
+
+      - name: net_revenue_retention_rate
+        description: >-
+          Rétention nette (NRR) : MRR actuel des clients présents au mois de
+          référence, rapporté à leur MRR de l'époque. L'expansion peut compenser
+          les pertes. Les nouveaux clients n'y entrent pas.
+
+      - name: gross_revenue_retention_rate
+        description: >-
+          Rétention brute (GRR) : même calcul sans l'expansion, car un client ne
+          peut pas compter pour plus que son MRR de référence. Ne dépasse jamais 100 %.
+
+      - name: billed_amount_eur
+        description: "CA facturé sur la période, en EUR."
+        data_tests: [not_null]
+
+      - name: budget_billed_eur
+        description: "CA facturé prévu au budget sur la période, en EUR."
+        data_tests: [not_null]
+
+      - name: billed_budget_attainment_rate
+        description: "Taux de réalisation du budget de CA."
+
+      - name: mrr_budget_attainment_rate
+        description: "MRR de clôture rapporté au MRR prévu au budget pour le dernier mois."
+
+      - name: open_amount_eur
+        description: "Encours client à la date d'arrêt, en EUR."
+        data_tests: [not_null]
+
+      - name: overdue_amount_eur
+        description: "Créances échues à la date d'arrêt, en EUR."
+        data_tests: [not_null]
+
+      - name: overdue_share_rate
+        description: "Part des créances échues dans l'encours client."
+
+      - name: days_sales_outstanding
+        description: >-
+          DSO : encours client rapporté au CA facturé, multiplié par le nombre de
+          jours de la période. Les montants sont hors taxes dans ce projet, alors
+          qu'un DSO comptable se calcule souvent sur des créances TTC.
+
+      - name: paid_invoice_count
+        description: "Nombre de factures payées."
+        data_tests: [not_null]
+
+      - name: avg_days_to_pay
+        description: "Délai moyen de paiement par facture, en jours."
+
+      - name: amount_weighted_days_to_pay
+        description: "Délai moyen de paiement pondéré par le montant des factures, en jours."
+
+      - name: late_payment_rate
+        description: "Part des factures payées après leur échéance."
+
+      - name: top_customer_share
+        description: "Part du premier client dans le CA facturé."
+
+      - name: top_3_customers_share
+        description: "Part des trois premiers clients dans le CA facturé."
+
   - name: fct_invoices
     description: >-
       Table de faits à la granularité d'une facture.
@@ -691,3 +808,90 @@ unit_tests:
         - {budget_month: '2026-01-01', billed_amount_eur: 110.00, budget_billed_eur: 100.00, billed_variance_eur: 10.00, billed_variance_rate: 0.1, closing_mrr_eur: 90.00, budget_closing_mrr_eur: 100.00, mrr_variance_eur: -10.00, mrr_variance_rate: -0.1}
         - {budget_month: '2026-02-01', billed_amount_eur: 0.00, budget_billed_eur: 50.00, billed_variance_eur: -50.00, billed_variance_rate: -1, closing_mrr_eur: 90.00, budget_closing_mrr_eur: 0.00, mrr_variance_eur: 90.00, mrr_variance_rate: null}
         - {budget_month: '2026-03-01', billed_amount_eur: 100.00, budget_billed_eur: 100.00, billed_variance_eur: 0.00, billed_variance_rate: 0, closing_mrr_eur: 100.00, budget_closing_mrr_eur: 100.00, mrr_variance_eur: 0.00, mrr_variance_rate: 0}
+
+  - name: test_mrr_by_plan_shares
+    description: "Les abonnements s'additionnent par plan, et les parts se calculent mois par mois."
+    model: mart_monthly_mrr_by_plan
+    given:
+      - input: ref('int_subscription_monthly_mrr')
+        rows:
+          - {subscription_id: S1, plan_code: starter, mrr_month: '2026-01-01', mrr_eur: 25.00}
+          - {subscription_id: S2, plan_code: starter, mrr_month: '2026-01-01', mrr_eur: 25.00}
+          - {subscription_id: S3, plan_code: growth, mrr_month: '2026-01-01', mrr_eur: 150.00}
+          - {subscription_id: S3, plan_code: growth, mrr_month: '2026-02-01', mrr_eur: 150.00}
+    expect:
+      rows:
+        - {plan_code: starter, mrr_month: '2026-01-01', closing_mrr_eur: 50.00, active_subscription_count: 2, mrr_share: 0.25}
+        - {plan_code: growth, mrr_month: '2026-01-01', closing_mrr_eur: 150.00, active_subscription_count: 1, mrr_share: 0.75}
+        - {plan_code: growth, mrr_month: '2026-02-01', closing_mrr_eur: 150.00, active_subscription_count: 1, mrr_share: 1}
+
+  - name: test_finance_kpis_definitions
+    description: >-
+      Valeurs attendues calculées à la main. C4, arrivé après le mois de
+      référence, n'entre pas dans la rétention. L'expansion de C1 compte dans
+      le NRR mais pas dans le GRR. La facture open n'entre pas dans les délais.
+    model: mart_finance_kpis
+    given:
+      - input: ref('int_months')
+        rows:
+          - {month_start: '2026-01-01', month_end: '2026-01-31'}
+          - {month_start: '2026-02-01', month_end: '2026-02-28'}
+          - {month_start: '2026-03-01', month_end: '2026-03-31'}
+          - {month_start: '2026-04-01', month_end: '2026-04-30'}
+      - input: ref('mart_monthly_mrr')
+        rows:
+          - {mrr_month: '2026-01-01', closing_mrr_eur: 300.00, closing_customer_count: 3}
+          - {mrr_month: '2026-04-01', closing_mrr_eur: 280.00, closing_customer_count: 3}
+      - input: ref('mart_customer_monthly_mrr')
+        rows:
+          - {customer_id: C1, mrr_month: '2026-01-01', closing_mrr_eur: 100.00}
+          - {customer_id: C2, mrr_month: '2026-01-01', closing_mrr_eur: 100.00}
+          - {customer_id: C3, mrr_month: '2026-01-01', closing_mrr_eur: 100.00}
+          - {customer_id: C1, mrr_month: '2026-04-01', closing_mrr_eur: 150.00}
+          - {customer_id: C2, mrr_month: '2026-04-01', closing_mrr_eur: 90.00}
+          - {customer_id: C4, mrr_month: '2026-04-01', closing_mrr_eur: 40.00}
+      - input: ref('mart_budget_vs_actual')
+        rows:
+          - {budget_month: '2026-01-01', billed_amount_eur: 100.00, budget_billed_eur: 125.00, budget_closing_mrr_eur: 300.00}
+          - {budget_month: '2026-02-01', billed_amount_eur: 100.00, budget_billed_eur: 125.00, budget_closing_mrr_eur: 300.00}
+          - {budget_month: '2026-03-01', billed_amount_eur: 100.00, budget_billed_eur: 125.00, budget_closing_mrr_eur: 300.00}
+          - {budget_month: '2026-04-01', billed_amount_eur: 100.00, budget_billed_eur: 125.00, budget_closing_mrr_eur: 350.00}
+      - input: ref('mart_open_invoices')
+        rows:
+          - {invoice_id: O1, amount_eur: 60.00, days_overdue: 0}
+          - {invoice_id: O2, amount_eur: 40.00, days_overdue: 10}
+      - input: ref('fct_invoices')
+        rows:
+          - {invoice_id: I1, invoice_status: paid, amount_eur: 100.00, days_to_pay: 10, is_paid_late: false}
+          - {invoice_id: I2, invoice_status: paid, amount_eur: 300.00, days_to_pay: 40, is_paid_late: true}
+          - {invoice_id: I3, invoice_status: open, amount_eur: 500.00, days_to_pay: null, is_paid_late: null}
+      - input: ref('mart_customer_monthly_billing')
+        rows:
+          - {customer_id: C1, invoice_month: '2026-01-01', billed_amount_eur: 200.00}
+          - {customer_id: C2, invoice_month: '2026-01-01', billed_amount_eur: 100.00}
+          - {customer_id: C3, invoice_month: '2026-01-01', billed_amount_eur: 60.00}
+          - {customer_id: C4, invoice_month: '2026-04-01', billed_amount_eur: 40.00}
+    expect:
+      rows:
+        - closing_date: '2026-04-30'
+          retention_base_month: '2026-01-01'
+          closing_mrr_eur: 280.00
+          closing_customer_count: 3
+          arr_eur: 3360.00
+          arpa_eur: 93.33
+          net_revenue_retention_rate: 0.8
+          gross_revenue_retention_rate: 0.6333
+          billed_amount_eur: 400.00
+          budget_billed_eur: 500.00
+          billed_budget_attainment_rate: 0.8
+          mrr_budget_attainment_rate: 0.8
+          open_amount_eur: 100.00
+          overdue_amount_eur: 40.00
+          overdue_share_rate: 0.4
+          days_sales_outstanding: 30.0
+          paid_invoice_count: 2
+          avg_days_to_pay: 25.0
+          amount_weighted_days_to_pay: 32.5
+          late_payment_rate: 0.5
+          top_customer_share: 0.5
+          top_3_customers_share: 0.9
