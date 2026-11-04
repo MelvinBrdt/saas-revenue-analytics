@@ -16,7 +16,7 @@ Les données sont entièrement synthétiques : ce dépôt ne contient aucune don
 |---|---|
 | Modélisation analytique | Trois couches (staging, table de faits, marts) avec un grain explicite pour chaque modèle |
 | Rigueur métier | Une définition claire du montant facturé, distinct du MRR, de l'encaissé et du revenu comptabilisé |
-| Qualité des données | 40 tests de données et 2 tests unitaires, dont une réconciliation entre les marts |
+| Qualité des données | 43 tests de données et 2 tests unitaires, dont une réconciliation entre les marts |
 | Automatisation | Un pipeline de CI qui reconstruit et teste tout le projet à chaque Pull Request |
 | Reproductibilité | Des dépendances verrouillées et des données de démonstration identiques à chaque exécution |
 | Méthode de travail | Des branches dédiées, des Pull Requests décrites et une branche `main` protégée |
