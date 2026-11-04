@@ -119,6 +119,7 @@ models:
           paid (payée), open (ouverte),
           void (annulée).
         data_tests:
+          - not_null
           - accepted_values:
               arguments:
                 values: ['paid', 'open', 'void']
