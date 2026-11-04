@@ -2,7 +2,7 @@
 
 [![dbt CI](https://github.com/MelvinBrdt/saas-revenue-analytics/actions/workflows/dbt-ci.yml/badge.svg)](https://github.com/MelvinBrdt/saas-revenue-analytics/actions/workflows/dbt-ci.yml)
 
-**Combien facture-t-on, quel revenu récurrent en tire-t-on et combien en perd-on chaque mois ?**
+**Combien facture-t-on, quel revenu récurrent en tire-t-on, et nos clients paient-ils à temps ?**
 
 Ce projet répond à ces questions pour une entreprise SaaS B2B fictive. Il part des exports bruts d'un CRM et d'un outil de facturation, puis les transforme en tables fiables, testées et documentées, prêtes pour un tableau de bord ou un reporting finance.
 
@@ -18,7 +18,7 @@ Les données sont entièrement synthétiques : ce dépôt ne contient aucune don
 |---|---|
 | Modélisation analytique | Des couches distinctes (staging, intermédiaire, table de faits, marts) avec un grain explicite pour chaque modèle |
 | Rigueur métier | Des définitions claires du montant facturé et du MRR, distincts de l'encaissé et du revenu comptabilisé |
-| Qualité des données | 80 tests de données et 7 tests unitaires, dont des réconciliations entre les modèles |
+| Qualité des données | 103 tests de données et 10 tests unitaires, dont des réconciliations entre les modèles |
 | Automatisation | Un pipeline de CI qui reconstruit et teste tout le projet à chaque Pull Request, puis publie le rapport |
 | Restitution | Un rapport web qui répond en français à des questions de contrôle de gestion et de comptabilité |
 | Reproductibilité | Des dépendances verrouillées et des données de démonstration identiques à chaque exécution |
@@ -33,6 +33,7 @@ Une équipe finance veut suivre sa facturation et l'évolution de son revenu ré
 | **Montant facturé** | Total des factures payées (`paid`) ou en attente (`open`), hors factures annulées (`void`) | Oui |
 | **MRR** | Prix mensuel des abonnements actifs le dernier jour du mois | Oui |
 | **Churn** | Perte de tout le MRR d'un client (s'il garde un abonnement sur deux, c'est une contraction) | Oui |
+| **Retard de paiement** | Facture non payée dont l'échéance est dépassée à la date d'arrêt | Oui |
 | Encaissé | Argent réellement reçu | Non |
 | Revenu comptabilisé | Revenu rattaché à sa période comptable | Non |
 
@@ -79,10 +80,24 @@ Ce tableau montre pourquoi ces indicateurs doivent rester distincts :
 - **Le facturé n'est pas le MRR.** En mars et en mai, des factures ponctuelles font passer le facturé au-dessus du MRR. En avril, les deux valent 695 € par coïncidence : le client C004 sort du MRR parce que son abonnement se termine, et du facturé parce que sa facture est annulée.
 - **Un total stable peut cacher un départ.** En avril, le MRR ne bouge pas alors que C004 part, car C006 arrive au même prix. Le churn atteint pourtant 21,44 % du MRR et 20 % des clients.
 
+### Les paiements
+
+Au 30 juin 2026, date d'arrêt du rapport, 666 € restent à encaisser, dont 169 € en retard :
+
+| Tranche | Factures | Montant |
+|---|---:|---:|
+| Pas encore échu | 3 | 497 € |
+| 1 à 30 jours de retard | 1 | 120 € |
+| 31 à 60 jours de retard | 0 | 0 € |
+| 61 à 90 jours de retard | 1 | 49 € |
+| **Total** | **5** | **666 €** |
+
+Les clients paient en 27 jours en moyenne, pour une échéance à 30 jours, mais 8 factures sur 25 ont été payées en retard. Birch Studio (45 jours) et Elm Retail (35 jours) dépassent régulièrement l'échéance.
+
 ## L'architecture
 
 ```mermaid
-flowchart LR
+flowchart TD
     A[Exports CSV<br>CRM et facturation] -->|Python| B[Tables brutes<br>DuckDB]
     B --> C[Staging<br>nettoyage et typage]
     C --> D[fct_invoices<br>une ligne par facture]
@@ -92,7 +107,9 @@ flowchart LR
     C --> G[int_customer_monthly_mrr<br>MRR de fin de mois par client]
     G --> H[mart_customer_monthly_mrr<br>mouvements par client et par mois]
     H --> I[mart_monthly_mrr<br>totaux et taux de churn par mois]
-    E & F & I & J --> K[Rapport financier<br>Quarto et Plotly]
+    D --> L[mart_open_invoices<br>factures à encaisser et retards]
+    D --> M[mart_customer_payment_behavior<br>délais de paiement par client]
+    E & F & I & J & L & M --> K[Rapport financier<br>Quarto et Plotly]
 ```
 
 | Couche | Modèles | Rôle |
@@ -101,7 +118,7 @@ flowchart LR
 | Intermédiaire | `int_months`, `int_customer_monthly_mrr` | Préparer le calendrier et le MRR de fin de mois, sans les exposer aux utilisateurs |
 | Table de faits | `fct_invoices` | Rattacher chaque facture à son client et calculer le montant facturé, à un seul endroit |
 | Dimension | `dim_customers` | Fournir le nom et le pays de chaque client aux analyses |
-| Marts | `mart_monthly_billing`, `mart_customer_monthly_billing`, `mart_customer_monthly_mrr`, `mart_monthly_mrr` | Fournir des agrégats prêts à l'emploi pour la finance |
+| Marts | `mart_monthly_billing`, `mart_customer_monthly_billing`, `mart_customer_monthly_mrr`, `mart_monthly_mrr`, `mart_open_invoices`, `mart_customer_payment_behavior` | Fournir des agrégats prêts à l'emploi pour la finance |
 | Rapport | `reports/index.qmd` | Présenter les résultats sans recalculer de règle métier |
 
 ## Les décisions de modélisation
@@ -114,6 +131,7 @@ flowchart LR
 - **Le MRR est mesuré le dernier jour du mois.** Un abonnement qui se termine ce jour-là n'en fait déjà plus partie, car il ne reviendra pas le mois suivant.
 - **Le churn se mesure au niveau du client.** Perdre un abonnement sur deux est une contraction, et un client qui revient est une réactivation, pas un nouveau client.
 - **Le calendrier s'arrête à la dernière facture, pas à la date du jour.** Les résultats restent ainsi identiques d'une exécution à l'autre.
+- **Les retards sont calculés à une date d'arrêt, pas à la date du jour.** Elle correspond au dernier jour du dernier mois facturé, pour que les résultats ne changent pas d'une exécution à l'autre.
 - **DuckDB plutôt qu'un entrepôt cloud.** Le projet se lance en quelques minutes, sans compte ni serveur, et les principes de modélisation restent les mêmes.
 
 ## La qualité des données
@@ -125,7 +143,7 @@ flowchart LR
 | Réconciliation | La cohérence entre les modèles | Les marts par client et mensuels donnent les mêmes totaux, et le MRR d'ouverture égale la clôture du mois précédent |
 | Tests unitaires | La logique SQL, avec des résultats attendus écrits à la main | Une facture annulée vaut 0 € et plusieurs factures d'un même mois donnent une seule ligne |
 
-Les données de démonstration contiennent volontairement des cas difficiles : plusieurs factures d'un même client sur un même mois, deux abonnements pour un même client, un mois où la seule facture est annulée, une facture émise le dernier jour du mois et un statut brut mal formaté. La contraction et la réactivation, absentes de ces données, sont couvertes par un test unitaire. Les tests ont aussi été éprouvés en cassant volontairement les modèles, pour vérifier qu'ils échouent bien quand il le faut.
+Les données de démonstration contiennent volontairement des cas difficiles : plusieurs factures d'un même client sur un même mois, deux abonnements pour un même client, un mois où la seule facture est annulée, une facture émise le dernier jour du mois, une facture très en retard et un statut brut mal formaté. La contraction et la réactivation, absentes de ces données, sont couvertes par un test unitaire. Les tests ont aussi été éprouvés en cassant volontairement les modèles, pour vérifier qu'ils échouent bien quand il le faut.
 
 Chaque Pull Request déclenche la [CI](.github/workflows/dbt-ci.yml), qui régénère les données, reconstruit le projet, lance tous les tests et génère le rapport. Chaque fusion dans `main` publie ensuite le rapport. Une règle GitHub protège `main` : chaque changement passe par une Pull Request, et cette CI doit réussir avant la fusion.
 
@@ -179,9 +197,11 @@ Ce projet est une démonstration, pas un système en production :
 - Le périmètre est simplifié : tout est en euros, sans TVA, avoirs, remises ni factures multi-lignes.
 - Un abonnement n'a qu'un seul prix, donc un changement de plan n'est pas modélisable, et un abonnement qui démarre et se termine dans le même mois n'entre jamais dans le MRR.
 - Le churn involontaire, lié aux impayés, n'est pas mesuré.
+- Un paiement solde toute la facture : les paiements partiels et les relances ne sont pas modélisés.
 - Le projet ne couvre pas les grands volumes ni l'historisation des changements.
 
 ## Les prochaines étapes
 
+- Ajouter un budget mensuel pour comparer le réalisé au prévu.
 - Ajouter un lint SQL à la CI.
 - Ajouter les mois sans facture au mart par client, avec une population définie.

@@ -40,6 +40,10 @@ def month_name(day):
     return MONTHS[day.month - 1]
 
 
+def long_date(day):
+    return f"{day.day} {month_name(day)} {day.year}"
+
+
 def show_chart(figure, description):
     # Plotly's script loads once, with the first chart of the page.
     global plotly_loaded
@@ -64,21 +68,31 @@ customers = con.execute("""
     order by 2
 """).fetchall()
 open_invoices = con.execute("""
-    select d.customer_name, f.invoice_date, f.amount_eur
-    from analytics_marts.fct_invoices as f
+    select d.customer_name, o.invoice_date, o.due_date, o.amount_eur, o.days_overdue, o.aging_bucket, o.closing_date
+    from analytics_marts.mart_open_invoices as o
     inner join analytics_marts.dim_customers as d
-        on f.customer_id = d.customer_id
-    where f.invoice_status = 'open'
-    order by f.invoice_date, d.customer_name
+        on o.customer_id = d.customer_id
+    order by o.days_overdue desc, o.invoice_date, d.customer_name
 """).fetchall()
-open_total = sum(invoice[2] for invoice in open_invoices)
+payments = con.execute("""
+    select d.customer_name, p.paid_invoice_count, p.total_days_to_pay, p.avg_days_to_pay, p.late_paid_invoice_count
+    from analytics_marts.mart_customer_payment_behavior as p
+    inner join analytics_marts.dim_customers as d
+        on p.customer_id = d.customer_id
+    order by p.avg_days_to_pay
+""").fetchall()
+open_total = sum(invoice[3] for invoice in open_invoices)
+overdue_total = sum(invoice[3] for invoice in open_invoices if invoice[4] > 0)
+paid_count = sum(row[1] for row in payments)
+late_count = sum(row[4] for row in payments)
+average_days = sum(row[2] for row in payments) / paid_count
 top_name, top_amount = customers[-1]
 
 tiles = [
     ("Facturé sur la période", euros(billed_total)),
     (f"MRR fin {month_name(con.execute('select max(mrr_month) from analytics_marts.mart_monthly_mrr').fetchone()[0])}", euros(closing_mrr)),
-    ("Factures en attente de paiement", euros(open_total)),
-    (f"Premier client, {top_name}", percent(top_amount / billed_total)),
+    ("Factures en retard", euros(overdue_total)),
+    ("Délai moyen de paiement", f"{average_days:.0f}\u00a0jours"),
 ]
 display(HTML(
     '<div class="tiles">'
@@ -165,17 +179,64 @@ figure.update_layout(height=300, xaxis=dict(visible=False, range=[0, float(top_a
 show_chart(figure, "Barres du montant facturé par client")
 ```
 
-## Quelles factures restent à encaisser ?
+## Quelles factures sont en retard ?
 
 ```{python}
-table = [
-    "| Client | Date de la facture | Montant |",
-    "|:---|:---|---:|",
-]
-for name, invoice_date, amount in open_invoices:
-    table.append(f"| {name} | {invoice_date.day} {month_name(invoice_date)} {invoice_date.year} | {euros(amount)} |")
-table.append(f"| **Total** | | **{euros(open_total)}** |")
+closing_date = open_invoices[0][6]
+display(Markdown(
+    f"Au {long_date(closing_date)}, {euros(open_total)} restent à encaisser, dont {euros(overdue_total)} en retard."
+))
+
+buckets = {
+    "not_due": "Pas encore échu",
+    "1_30_days": "1 à 30 jours de retard",
+    "31_60_days": "31 à 60 jours de retard",
+    "61_90_days": "61 à 90 jours de retard",
+    "over_90_days": "Plus de 90 jours de retard",
+}
+table = ["| Tranche | Factures | Montant |", "|:---|---:|---:|"]
+for bucket, label in buckets.items():
+    amounts = [invoice[3] for invoice in open_invoices if invoice[5] == bucket]
+    table.append(f"| {label} | {len(amounts)} | {euros(sum(amounts))} |")
+table.append(f"| **Total** | **{len(open_invoices)}** | **{euros(open_total)}** |")
 display(Markdown("\n".join(table)))
+```
+
+```{python}
+table = ["| Client | Facture | Échéance | Montant | Retard |", "|:---|:---|:---|---:|---:|"]
+for name, invoice_date, due, amount, days_overdue, _, _ in open_invoices:
+    delay = f"{days_overdue} jours" if days_overdue > 0 else "Non échue"
+    table.append(f"| {name} | {long_date(invoice_date)} | {long_date(due)} | {euros(amount)} | {delay} |")
+display(Markdown("\n".join(table)))
+```
+
+## En combien de jours nos clients paient-ils ?
+
+```{python}
+term_days = con.execute("select max(due_date - invoice_date) from analytics_marts.fct_invoices").fetchone()[0]
+
+display(Markdown(
+    f"En moyenne, nos clients paient en {average_days:.0f} jours, pour une échéance à {term_days} jours. "
+    f"{late_count} factures sur {paid_count} ont été payées en retard. "
+    "En orange, les clients dont le délai moyen dépasse l'échéance."
+))
+
+figure = go.Figure()
+figure.add_bar(
+    x=[float(row[3]) for row in payments],
+    y=[row[0] for row in payments],
+    orientation="h",
+    marker=dict(color=[ORANGE if row[3] > term_days else BLUE for row in payments], cornerradius=4),
+    text=[f"{row[3]:.0f} jours" for row in payments],
+    # Labels sit at the start of the bars, clear of the due date line.
+    textposition="inside",
+    insidetextanchor="start",
+    textfont=dict(color="white"),
+    hovertemplate="%{y} : %{x:.0f} jours<extra></extra>",
+)
+figure.add_vline(x=term_days, line=dict(color="#52514e", width=1, dash="dash"), annotation_text="Échéance", annotation_position="top")
+figure.update_layout(height=300, xaxis=dict(visible=False, range=[0, float(payments[-1][3]) * 1.05]), yaxis=dict(automargin=True))
+show_chart(figure, "Barres du délai moyen de paiement par client, avec l'échéance en repère")
 ```
 
 ::: {.report-note}

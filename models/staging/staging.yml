@@ -104,6 +104,18 @@ models:
         data_tests:
           - not_null
 
+      - name: due_date
+        description: >-
+          Date d'échéance de la facture, convertie
+          au type DATE.
+        data_tests:
+          - not_null
+
+      - name: paid_date
+        description: >-
+          Date de paiement de la facture. NULL si elle n'est
+          pas payée. Une date illisible fait échouer le build.
+
       - name: subscription_id
         description: >-
           Identifiant de l'abonnement auquel

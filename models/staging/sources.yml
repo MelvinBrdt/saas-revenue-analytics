@@ -77,6 +77,12 @@ sources:
           - name: invoice_date
             description: "Date d'émission de la facture."
 
+          - name: due_date
+            description: "Date d'échéance de la facture."
+
+          - name: paid_date
+            description: "Date de paiement de la facture. Vide si elle n'est pas payée."
+
           - name: amount_eur
             description: "Montant initial de la facture en EUR."
 
