@@ -18,7 +18,7 @@ Les données sont entièrement synthétiques : ce dépôt ne contient aucune don
 |---|---|
 | Modélisation analytique | Des couches distinctes (staging, intermédiaire, table de faits, marts) avec un grain explicite pour chaque modèle |
 | Rigueur métier | Des définitions claires du montant facturé et du MRR, distincts de l'encaissé et du revenu comptabilisé |
-| Qualité des données | 103 tests de données et 10 tests unitaires, dont des réconciliations entre les modèles |
+| Qualité des données | 117 tests de données et 11 tests unitaires, dont des réconciliations entre les modèles |
 | Automatisation | Un pipeline de CI qui reconstruit et teste tout le projet à chaque Pull Request, puis publie le rapport |
 | Restitution | Un rapport web qui répond en français à des questions de contrôle de gestion et de comptabilité |
 | Reproductibilité | Des dépendances verrouillées et des données de démonstration identiques à chaque exécution |
@@ -34,6 +34,7 @@ Une équipe finance veut suivre sa facturation et l'évolution de son revenu ré
 | **MRR** | Prix mensuel des abonnements actifs le dernier jour du mois | Oui |
 | **Churn** | Perte de tout le MRR d'un client (s'il garde un abonnement sur deux, c'est une contraction) | Oui |
 | **Retard de paiement** | Facture non payée dont l'échéance est dépassée à la date d'arrêt | Oui |
+| **Écart au budget** | Réalisé moins budget, pour le facturé et le MRR | Oui |
 | Encaissé | Argent réellement reçu | Non |
 | Revenu comptabilisé | Revenu rattaché à sa période comptable | Non |
 
@@ -80,6 +81,22 @@ Ce tableau montre pourquoi ces indicateurs doivent rester distincts :
 - **Le facturé n'est pas le MRR.** En mars et en mai, des factures ponctuelles font passer le facturé au-dessus du MRR. En avril, les deux valent 695 € par coïncidence : le client C004 sort du MRR parce que son abonnement se termine, et du facturé parce que sa facture est annulée.
 - **Un total stable peut cacher un départ.** En avril, le MRR ne bouge pas alors que C004 part, car C006 arrive au même prix. Le churn atteint pourtant 21,44 % du MRR et 20 % des clients.
 
+### Le budget
+
+Écarts au budget, un écart positif signifiant que le réalisé le dépasse :
+
+| Mois | Facturé | Budget | Écart | MRR | Budget | Écart |
+|---|---:|---:|---:|---:|---:|---:|
+| Janvier | 198 € | 200 € | -2 € | 198 € | 200 € | -2 € |
+| Février | 396 € | 400 € | -4 € | 396 € | 400 € | -4 € |
+| Mars | 744 € | 650 € | +94 € | 695 € | 650 € | +45 € |
+| Avril | 695 € | 800 € | -105 € | 695 € | 800 € | -105 € |
+| Mai | 845 € | 800 € | +45 € | 695 € | 800 € | -105 € |
+| Juin | 844 € | 850 € | -6 € | 844 € | 850 € | -6 € |
+| **Total** | **3 722 €** | **3 700 €** | **+22 €** | | | |
+
+Le total respecte presque le budget, mais le revenu récurrent reste 105 € sous l'objectif en avril et en mai. En mai, des factures ponctuelles masquent cet écart dans le facturé.
+
 ### Les paiements
 
 Au 30 juin 2026, date d'arrêt du rapport, 666 € restent à encaisser, dont 169 € en retard :
@@ -109,16 +126,19 @@ flowchart TD
     H --> I[mart_monthly_mrr<br>totaux et taux de churn par mois]
     D --> L[mart_open_invoices<br>factures à encaisser et retards]
     D --> M[mart_customer_payment_behavior<br>délais de paiement par client]
-    E & F & I & J & L & M --> K[Rapport financier<br>Quarto et Plotly]
+    N[Budget mensuel<br>seed dbt] --> O[mart_budget_vs_actual<br>écarts au budget par mois]
+    E & I --> O
+    E & F & I & J & L & M & O --> K[Rapport financier<br>Quarto et Plotly]
 ```
 
 | Couche | Modèles | Rôle |
 |---|---|---|
+| Référence | `budget_monthly` | Fournir le budget, saisi à la main et versionné dans le dépôt |
 | Staging | `stg_crm__customers`, `stg_billing__subscriptions`, `stg_billing__invoices` | Nettoyer et typer les données brutes, sans règle métier |
 | Intermédiaire | `int_months`, `int_customer_monthly_mrr` | Préparer le calendrier et le MRR de fin de mois, sans les exposer aux utilisateurs |
 | Table de faits | `fct_invoices` | Rattacher chaque facture à son client et calculer le montant facturé, à un seul endroit |
 | Dimension | `dim_customers` | Fournir le nom et le pays de chaque client aux analyses |
-| Marts | `mart_monthly_billing`, `mart_customer_monthly_billing`, `mart_customer_monthly_mrr`, `mart_monthly_mrr`, `mart_open_invoices`, `mart_customer_payment_behavior` | Fournir des agrégats prêts à l'emploi pour la finance |
+| Marts | `mart_monthly_billing`, `mart_customer_monthly_billing`, `mart_customer_monthly_mrr`, `mart_monthly_mrr`, `mart_open_invoices`, `mart_customer_payment_behavior`, `mart_budget_vs_actual` | Fournir des agrégats prêts à l'emploi pour la finance |
 | Rapport | `reports/index.qmd` | Présenter les résultats sans recalculer de règle métier |
 
 ## Les décisions de modélisation
@@ -132,6 +152,8 @@ flowchart TD
 - **Le churn se mesure au niveau du client.** Perdre un abonnement sur deux est une contraction, et un client qui revient est une réactivation, pas un nouveau client.
 - **Le calendrier s'arrête à la dernière facture, pas à la date du jour.** Les résultats restent ainsi identiques d'une exécution à l'autre.
 - **Les retards sont calculés à une date d'arrêt, pas à la date du jour.** Elle correspond au dernier jour du dernier mois facturé, pour que les résultats ne changent pas d'une exécution à l'autre.
+- **Le budget est un seed dbt.** C'est une donnée saisie à la main et qui change peu : un petit CSV versionné suffit, et chaque modification passe par une Pull Request.
+- **Un mois sans budget fait échouer le build.** Un écart calculé sur un budget manquant serait pire qu'une erreur visible.
 - **DuckDB plutôt qu'un entrepôt cloud.** Le projet se lance en quelques minutes, sans compte ni serveur, et les principes de modélisation restent les mêmes.
 
 ## La qualité des données
@@ -180,6 +202,7 @@ dbt docs serve --profiles-dir .
 ```text
 .github/workflows/   CI GitHub Actions
 data/raw/            Exports CSV de démonstration
+seeds/               Budget mensuel
 models/staging/      Nettoyage et typage des sources
 models/intermediate/ Calendrier et MRR de fin de mois
 models/marts/        Table de faits et marts finance
@@ -198,10 +221,10 @@ Ce projet est une démonstration, pas un système en production :
 - Un abonnement n'a qu'un seul prix, donc un changement de plan n'est pas modélisable, et un abonnement qui démarre et se termine dans le même mois n'entre jamais dans le MRR.
 - Le churn involontaire, lié aux impayés, n'est pas mesuré.
 - Un paiement solde toute la facture : les paiements partiels et les relances ne sont pas modélisés.
+- Le budget est fictif et porte sur le total du mois, sans détail par client ni par plan.
 - Le projet ne couvre pas les grands volumes ni l'historisation des changements.
 
 ## Les prochaines étapes
 
-- Ajouter un budget mensuel pour comparer le réalisé au prévu.
 - Ajouter un lint SQL à la CI.
 - Ajouter les mois sans facture au mart par client, avec une population définie.
