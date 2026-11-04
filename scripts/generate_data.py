@@ -25,6 +25,21 @@ SUBSCRIPTIONS = [
     ("S004", "C004", "growth", "2026-02-01", "2026-04-30", "149.00"),
     ("S005", "C005", "enterprise", "2026-03-01", "", "299.00"),
     ("S006", "C006", "growth", "2026-04-01", "", "149.00"),
+    # Second subscription for C001: two invoices in the same customer month.
+    ("S007", "C001", "growth", "2026-06-01", "", "149.00"),
+]
+
+# Cases the monthly loop cannot produce, appended after it so its invoice ids stay stable.
+# subscription_id, invoice_date, amount_eur, invoice_status
+EDGE_CASE_INVOICES = [
+    # Voided invoice next to a paid one in the same customer month.
+    ("S002", "2026-03-15", "149.00", "void"),
+    # Second paid invoice in the same customer month, on the last day of the month.
+    ("S003", "2026-03-31", "49.00", "paid"),
+    # Issued after the subscription ended on 2026-04-30.
+    ("S004", "2026-05-10", "30.00", "paid"),
+    # Open next to a paid invoice in the same customer month, with an unnormalized raw status.
+    ("S005", "2026-05-20", "120.00", " OPEN"),
 ]
 
 MONTHS = [date(2026, m, 1) for m in range(1, 7)]
@@ -58,6 +73,9 @@ def main() -> None:
                 status = "void"
             invoices.append((f"I{next_id:04}", sub_id, month.isoformat(), price, status))
             next_id += 1
+    for sub_id, invoice_date, price, status in EDGE_CASE_INVOICES:
+        invoices.append((f"I{next_id:04}", sub_id, invoice_date, price, status))
+        next_id += 1
     write_csv("invoices.csv", ["invoice_id", "subscription_id", "invoice_date", "amount_eur", "invoice_status"], invoices)
 
 
