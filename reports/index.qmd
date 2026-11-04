@@ -1,0 +1,183 @@
+---
+title: "Rapport financier"
+subtitle: "Janvier à juin 2026, données synthétiques"
+lang: fr
+format:
+  html:
+    theme: cosmo
+    css: styles.css
+    html-math-method: plain
+    toc: false
+execute:
+  echo: false
+  warning: false
+jupyter: python3
+---
+
+```{python}
+# The report only reads dbt models: business rules stay in dbt, never here.
+import duckdb
+import plotly.graph_objects as go
+from IPython.display import HTML, Markdown, display
+
+con = duckdb.connect("../data/saas.duckdb", read_only=True)
+
+MONTHS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"]
+BLUE = "#2a78d6"
+ORANGE = "#eb6834"
+plotly_loaded = False
+
+
+def euros(value):
+    return f"{value:,.0f}".replace(",", " ") + " €"
+
+
+def percent(value):
+    return f"{value * 100:.1f}".replace(".", ",") + " %"
+
+
+def month_name(day):
+    return MONTHS[day.month - 1]
+
+
+def show_chart(figure, description):
+    # Plotly's script loads once, with the first chart of the page.
+    global plotly_loaded
+    figure.update_layout(template="plotly_white", separators=", ", margin=dict(l=10, r=10, t=30, b=10))
+    chart = figure.to_html(
+        full_html=False,
+        include_plotlyjs=False if plotly_loaded else "cdn",
+        config={"displayModeBar": False, "responsive": True},
+    )
+    plotly_loaded = True
+    display(HTML(f'<div role="img" aria-label="{description}">{chart}</div>'))
+
+
+billed_total = con.execute("select sum(billed_amount_eur) from analytics_marts.mart_monthly_billing").fetchone()[0]
+closing_mrr = con.execute("select closing_mrr_eur from analytics_marts.mart_monthly_mrr order by mrr_month desc limit 1").fetchone()[0]
+customers = con.execute("""
+    select d.customer_name, sum(b.billed_amount_eur) as billed_amount_eur
+    from analytics_marts.mart_customer_monthly_billing as b
+    inner join analytics_marts.dim_customers as d
+        on b.customer_id = d.customer_id
+    group by 1
+    order by 2
+""").fetchall()
+open_invoices = con.execute("""
+    select d.customer_name, f.invoice_date, f.amount_eur
+    from analytics_marts.fct_invoices as f
+    inner join analytics_marts.dim_customers as d
+        on f.customer_id = d.customer_id
+    where f.invoice_status = 'open'
+    order by f.invoice_date, d.customer_name
+""").fetchall()
+open_total = sum(invoice[2] for invoice in open_invoices)
+top_name, top_amount = customers[-1]
+
+tiles = [
+    ("Facturé sur la période", euros(billed_total)),
+    (f"MRR fin {month_name(con.execute('select max(mrr_month) from analytics_marts.mart_monthly_mrr').fetchone()[0])}", euros(closing_mrr)),
+    ("Factures en attente de paiement", euros(open_total)),
+    (f"Premier client, {top_name}", percent(top_amount / billed_total)),
+]
+display(HTML(
+    '<div class="tiles">'
+    + "".join(f'<div class="tile"><div class="tile-label">{label}</div><div class="tile-value">{value}</div></div>' for label, value in tiles)
+    + "</div>"
+))
+```
+
+## Pourquoi le facturé dépasse-t-il parfois le MRR ?
+
+```{python}
+rows = con.execute("""
+    select b.invoice_month, b.billed_amount_eur, m.closing_mrr_eur
+    from analytics_marts.mart_monthly_billing as b
+    inner join analytics_marts.mart_monthly_mrr as m
+        on b.invoice_month = m.mrr_month
+    order by 1
+""").fetchall()
+gaps = [f"{month_name(row[0])} ({euros(row[1] - row[2])})" for row in rows if row[1] > row[2]]
+
+display(Markdown(
+    "Le MRR mesure ce qui se répète chaque mois, alors que le facturé inclut aussi les factures ponctuelles. "
+    f"L'écart apparaît en {' et en '.join(gaps)}."
+))
+
+labels = [month_name(row[0]) for row in rows]
+figure = go.Figure()
+figure.add_scatter(x=labels, y=[float(row[1]) for row in rows], name="Facturé", mode="lines+markers", line=dict(color=BLUE, width=2), hovertemplate="%{y:,.0f} €")
+figure.add_scatter(x=labels, y=[float(row[2]) for row in rows], name="MRR", mode="lines+markers", line=dict(color=ORANGE, width=2, dash="dash"), hovertemplate="%{y:,.0f} €")
+figure.update_layout(height=320, hovermode="x unified", yaxis=dict(rangemode="tozero", ticksuffix=" €"), legend=dict(orientation="h", y=1.12))
+show_chart(figure, "Courbes mensuelles du facturé et du MRR")
+```
+
+## Comment évolue le revenu récurrent ?
+
+```{python}
+movements = con.execute("""
+    select
+        mrr_month,
+        opening_mrr_eur,
+        new_mrr_eur + expansion_mrr_eur + reactivation_mrr_eur as gains_eur,
+        contraction_mrr_eur + churned_mrr_eur as losses_eur,
+        closing_mrr_eur,
+        closing_customer_count,
+        gross_mrr_churn_rate
+    from analytics_marts.mart_monthly_mrr
+    order by mrr_month
+""").fetchall()
+worst = min(movements, key=lambda row: row[3])
+
+if worst[3] < 0:
+    display(Markdown(
+        "Un total stable peut cacher un départ. "
+        f"En {month_name(worst[0])}, le revenu récurrent perd {euros(-worst[3])}, soit {percent(worst[6])} de son niveau d'ouverture."
+    ))
+
+table = [
+    "| Mois | Ouverture | Gains | Pertes | Clôture | Clients | Part perdue |",
+    "|:---|---:|---:|---:|---:|---:|---:|",
+]
+for row in movements:
+    lost = "n/a" if row[6] is None else percent(row[6])
+    table.append(f"| {month_name(row[0]).capitalize()} | {euros(row[1])} | {euros(row[2])} | {euros(row[3])} | {euros(row[4])} | {row[5]} | {lost} |")
+display(Markdown("\n".join(table)))
+```
+
+## Quels clients pèsent le plus dans le facturé ?
+
+```{python}
+display(Markdown(f"{top_name} représente {percent(top_amount / billed_total)} du montant facturé sur la période."))
+
+figure = go.Figure()
+figure.add_bar(
+    x=[float(customer[1]) for customer in customers],
+    y=[customer[0] for customer in customers],
+    orientation="h",
+    marker=dict(color=BLUE, cornerradius=4),
+    text=[euros(customer[1]) for customer in customers],
+    textposition="outside",
+    cliponaxis=False,
+    hovertemplate="%{y} : %{x:,.0f} €<extra></extra>",
+)
+figure.update_layout(height=300, xaxis=dict(visible=False, range=[0, float(top_amount) * 1.18]), yaxis=dict(automargin=True))
+show_chart(figure, "Barres du montant facturé par client")
+```
+
+## Quelles factures restent à encaisser ?
+
+```{python}
+table = [
+    "| Client | Date de la facture | Montant |",
+    "|:---|:---|---:|",
+]
+for name, invoice_date, amount in open_invoices:
+    table.append(f"| {name} | {invoice_date.day} {month_name(invoice_date)} {invoice_date.year} | {euros(amount)} |")
+table.append(f"| **Total** | | **{euros(open_total)}** |")
+display(Markdown("\n".join(table)))
+```
+
+::: {.report-note}
+Le montant facturé inclut les factures payées et en attente, et exclut les factures annulées. Les données sont fictives, et ce rapport ne constitue pas un document comptable. Le code et les définitions sont sur [GitHub](https://github.com/MelvinBrdt/saas-revenue-analytics).
+:::

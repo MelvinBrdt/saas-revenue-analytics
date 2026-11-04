@@ -6,7 +6,9 @@
 
 Ce projet répond à ces questions pour une entreprise SaaS B2B fictive. Il part des exports bruts d'un CRM et d'un outil de facturation, puis les transforme en tables fiables, testées et documentées, prêtes pour un tableau de bord ou un reporting finance.
 
-**Outils :** SQL, dbt Core, DuckDB, Python, Git et GitHub Actions.
+**[Consulter le rapport financier](https://melvinbrdt.github.io/saas-revenue-analytics/)**
+
+**Outils :** SQL, dbt Core, DuckDB, Python, Quarto, Plotly, Git et GitHub Actions.
 
 Les données sont entièrement synthétiques : ce dépôt ne contient aucune donnée réelle ni personnelle.
 
@@ -17,7 +19,8 @@ Les données sont entièrement synthétiques : ce dépôt ne contient aucune don
 | Modélisation analytique | Des couches distinctes (staging, intermédiaire, table de faits, marts) avec un grain explicite pour chaque modèle |
 | Rigueur métier | Des définitions claires du montant facturé et du MRR, distincts de l'encaissé et du revenu comptabilisé |
 | Qualité des données | 80 tests de données et 7 tests unitaires, dont des réconciliations entre les modèles |
-| Automatisation | Un pipeline de CI qui reconstruit et teste tout le projet à chaque Pull Request |
+| Automatisation | Un pipeline de CI qui reconstruit et teste tout le projet à chaque Pull Request, puis publie le rapport |
+| Restitution | Un rapport web qui répond en français à des questions de contrôle de gestion et de comptabilité |
 | Reproductibilité | Des dépendances verrouillées et des données de démonstration identiques à chaque exécution |
 | Méthode de travail | Des branches dédiées, des Pull Requests décrites et une branche `main` protégée |
 
@@ -89,6 +92,7 @@ flowchart LR
     C --> G[int_customer_monthly_mrr<br>MRR de fin de mois par client]
     G --> H[mart_customer_monthly_mrr<br>mouvements par client et par mois]
     H --> I[mart_monthly_mrr<br>totaux et taux de churn par mois]
+    E & F & I & J --> K[Rapport financier<br>Quarto et Plotly]
 ```
 
 | Couche | Modèles | Rôle |
@@ -98,6 +102,7 @@ flowchart LR
 | Table de faits | `fct_invoices` | Rattacher chaque facture à son client et calculer le montant facturé, à un seul endroit |
 | Dimension | `dim_customers` | Fournir le nom et le pays de chaque client aux analyses |
 | Marts | `mart_monthly_billing`, `mart_customer_monthly_billing`, `mart_customer_monthly_mrr`, `mart_monthly_mrr` | Fournir des agrégats prêts à l'emploi pour la finance |
+| Rapport | `reports/index.qmd` | Présenter les résultats sans recalculer de règle métier |
 
 ## Les décisions de modélisation
 
@@ -122,7 +127,7 @@ flowchart LR
 
 Les données de démonstration contiennent volontairement des cas difficiles : plusieurs factures d'un même client sur un même mois, deux abonnements pour un même client, un mois où la seule facture est annulée, une facture émise le dernier jour du mois et un statut brut mal formaté. La contraction et la réactivation, absentes de ces données, sont couvertes par un test unitaire. Les tests ont aussi été éprouvés en cassant volontairement les modèles, pour vérifier qu'ils échouent bien quand il le faut.
 
-Chaque Pull Request déclenche la [CI](.github/workflows/dbt-ci.yml), qui régénère les données, reconstruit le projet et lance tous les tests. Une règle GitHub protège `main` : chaque changement passe par une Pull Request, et cette CI doit réussir avant la fusion.
+Chaque Pull Request déclenche la [CI](.github/workflows/dbt-ci.yml), qui régénère les données, reconstruit le projet, lance tous les tests et génère le rapport. Chaque fusion dans `main` publie ensuite le rapport. Une règle GitHub protège `main` : chaque changement passe par une Pull Request, et cette CI doit réussir avant la fusion.
 
 ## Lancer le projet
 
@@ -139,6 +144,12 @@ dbt build --profiles-dir .
 
 Sous Windows PowerShell, activez l'environnement avec `.venv\Scripts\Activate.ps1`.
 
+Pour générer le rapport, [installez Quarto](https://quarto.org/docs/get-started/) (version 1.11.9 en CI), puis ouvrez `reports/index.html` après cette commande :
+
+```bash
+quarto render reports/index.qmd
+```
+
 Pour parcourir la documentation des modèles et le graphe de dépendances dans le navigateur :
 
 ```bash
@@ -154,6 +165,7 @@ data/raw/            Exports CSV de démonstration
 models/staging/      Nettoyage et typage des sources
 models/intermediate/ Calendrier et MRR de fin de mois
 models/marts/        Table de faits et marts finance
+reports/             Rapport financier
 scripts/             Génération et chargement des données
 tests/               Tests singuliers
 ```

@@ -13,3 +13,7 @@ __pycache__/
 .DS_Store
 # Local dbt user configuration
 .user.yml
+# Quarto output
+/reports/index.html
+/reports/index_files/
+/_site/

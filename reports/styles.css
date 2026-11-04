@@ -1,0 +1,44 @@
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin: 1rem 0 1.5rem;
+}
+
+.tile {
+  background: #f6f6f4;
+  border-radius: 8px;
+  padding: 0.9rem 1rem;
+}
+
+.tile-label {
+  color: #52514e;
+  font-size: 0.85rem;
+}
+
+.tile-value {
+  font-size: 1.5rem;
+  font-weight: 500;
+}
+
+/* Quarto scrolls cell outputs by default, which adds a bar under responsive charts. */
+.cell-output-display:has(.js-plotly-plot) {
+  overflow: visible !important;
+}
+
+/* Wide tables scroll inside their own block on small screens, not the whole page. */
+.cell-output-display:has(table) {
+  overflow-x: auto;
+}
+
+.cell-output-display table {
+  font-variant-numeric: tabular-nums;
+}
+
+.report-note {
+  border-top: 1px solid #e1e0d9;
+  color: #52514e;
+  font-size: 0.85rem;
+  margin-top: 2rem;
+  padding-top: 1rem;
+}

@@ -4,3 +4,9 @@
 dbt-core==1.12.6
 dbt-duckdb==1.11.1
 duckdb==2.0.0
+
+# Financial report rendered by Quarto.
+ipykernel==7.4.0
+nbclient==0.11.0
+nbformat==5.11.1
+plotly==7.1.0
