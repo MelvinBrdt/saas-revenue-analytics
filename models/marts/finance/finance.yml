@@ -100,6 +100,132 @@ models:
           Elles sont comptées pour le suivi mais ne
           contribuent pas au montant facturé.
 
+  - name: mart_customer_monthly_mrr
+    description: >-
+      Mouvements de MRR par client et par mois. Une ligne existe dès que le
+      client a du MRR au début ou à la fin du mois, ce qui conserve le mois
+      de son churn. Le MRR mesure le prix des abonnements actifs à la fin
+      du mois. Ce modèle ne mesure ni la facturation, ni les encaissements,
+      ni le revenu comptabilisé.
+
+    columns:
+      - name: customer_id
+        description: "Identifiant du client. Clé de granularité avec mrr_month."
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_crm__customers')
+                field: customer_id
+
+      - name: mrr_month
+        description: "Premier jour du mois mesuré. Clé de granularité avec customer_id."
+        data_tests: [not_null]
+
+      - name: movement_type
+        description: >-
+          Mouvement net du client sur le mois : new (premier MRR),
+          expansion (hausse), contraction (baisse sans départ),
+          churn (passage à zéro), reactivation (retour après un churn)
+          ou stable (aucun changement).
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['new', 'expansion', 'contraction', 'churn', 'reactivation', 'stable']
+
+      - name: opening_mrr_eur
+        description: "MRR à la fin du mois précédent, en EUR."
+        data_tests: [not_null]
+
+      - name: new_mrr_eur
+        description: "MRR apporté par un nouveau client, en EUR."
+        data_tests: [not_null]
+
+      - name: expansion_mrr_eur
+        description: "Hausse du MRR d'un client déjà actif, en EUR."
+        data_tests: [not_null]
+
+      - name: reactivation_mrr_eur
+        description: "MRR d'un client qui revient après un churn, en EUR."
+        data_tests: [not_null]
+
+      - name: contraction_mrr_eur
+        description: "Baisse du MRR d'un client qui reste actif, en EUR. Montant négatif."
+        data_tests: [not_null]
+
+      - name: churned_mrr_eur
+        description: "MRR perdu quand le client passe à zéro, en EUR. Montant négatif."
+        data_tests: [not_null]
+
+      - name: closing_mrr_eur
+        description: "MRR à la fin du mois, en EUR."
+        data_tests: [not_null]
+
+  - name: mart_monthly_mrr
+    description: >-
+      Évolution mensuelle du MRR et taux de churn, avec une ligne par mois
+      du calendrier, y compris les mois sans MRR. Ce modèle ne mesure ni la
+      facturation, ni les encaissements, ni le revenu comptabilisé.
+
+    columns:
+      - name: mrr_month
+        description: "Premier jour du mois mesuré. Clé de granularité du mart."
+        data_tests: [unique, not_null]
+
+      - name: opening_mrr_eur
+        description: "MRR à la fin du mois précédent, en EUR."
+        data_tests: [not_null]
+
+      - name: new_mrr_eur
+        description: "MRR apporté par les nouveaux clients, en EUR."
+        data_tests: [not_null]
+
+      - name: expansion_mrr_eur
+        description: "Hausse du MRR des clients déjà actifs, en EUR."
+        data_tests: [not_null]
+
+      - name: reactivation_mrr_eur
+        description: "MRR des clients revenus après un churn, en EUR."
+        data_tests: [not_null]
+
+      - name: contraction_mrr_eur
+        description: "Baisse du MRR des clients qui restent actifs, en EUR. Montant négatif."
+        data_tests: [not_null]
+
+      - name: churned_mrr_eur
+        description: "MRR perdu par les clients passés à zéro, en EUR. Montant négatif."
+        data_tests: [not_null]
+
+      - name: closing_mrr_eur
+        description: "MRR à la fin du mois, en EUR."
+        data_tests: [not_null]
+
+      - name: opening_customer_count
+        description: "Nombre de clients avec du MRR à la fin du mois précédent."
+
+      - name: new_customer_count
+        description: "Nombre de nouveaux clients sur le mois."
+
+      - name: reactivated_customer_count
+        description: "Nombre de clients revenus après un churn."
+
+      - name: churned_customer_count
+        description: "Nombre de clients passés à zéro sur le mois."
+
+      - name: closing_customer_count
+        description: "Nombre de clients avec du MRR à la fin du mois."
+
+      - name: gross_mrr_churn_rate
+        description: >-
+          Part du MRR d'ouverture perdue sur le mois, par churn ou contraction.
+          NULL si le mois s'ouvre sans MRR.
+
+      - name: customer_churn_rate
+        description: >-
+          Part des clients d'ouverture perdus sur le mois.
+          NULL si le mois s'ouvre sans client.
+
   - name: fct_invoices
     description: >-
       Table de faits à la granularité d'une facture.
@@ -206,3 +332,72 @@ unit_tests:
         - {invoice_id: I2, customer_id: C1, amount_eur: 50.00, billed_amount_eur: 50.00}
         - {invoice_id: I3, customer_id: C2, amount_eur: 75.00, billed_amount_eur: 0.00}
         - {invoice_id: I4, customer_id: null, amount_eur: 20.00, billed_amount_eur: 20.00}
+
+  - name: test_customer_monthly_mrr_classifies_movements
+    description: >-
+      Le parcours de C1 couvre chaque mouvement, dont le churn qui garde sa
+      ligne, le mois sans MRR qui n'en a pas et le retour en réactivation.
+      C2 arrive tardivement et reste un nouveau client.
+    model: mart_customer_monthly_mrr
+    given:
+      - input: ref('int_months')
+        rows:
+          - {month_start: '2026-01-01', month_end: '2026-01-31'}
+          - {month_start: '2026-02-01', month_end: '2026-02-28'}
+          - {month_start: '2026-03-01', month_end: '2026-03-31'}
+          - {month_start: '2026-04-01', month_end: '2026-04-30'}
+          - {month_start: '2026-05-01', month_end: '2026-05-31'}
+          - {month_start: '2026-06-01', month_end: '2026-06-30'}
+          - {month_start: '2026-07-01', month_end: '2026-07-31'}
+          - {month_start: '2026-08-01', month_end: '2026-08-31'}
+      - input: ref('int_customer_monthly_mrr')
+        rows:
+          - {customer_id: C1, mrr_month: '2026-01-01', mrr_eur: 100.00}
+          - {customer_id: C1, mrr_month: '2026-02-01', mrr_eur: 100.00}
+          - {customer_id: C1, mrr_month: '2026-03-01', mrr_eur: 150.00}
+          - {customer_id: C1, mrr_month: '2026-04-01', mrr_eur: 120.00}
+          - {customer_id: C1, mrr_month: '2026-07-01', mrr_eur: 80.00}
+          - {customer_id: C1, mrr_month: '2026-08-01', mrr_eur: 80.00}
+          - {customer_id: C2, mrr_month: '2026-08-01', mrr_eur: 40.00}
+    expect:
+      rows:
+        - {customer_id: C1, mrr_month: '2026-01-01', movement_type: new, opening_mrr_eur: 0.00, new_mrr_eur: 100.00, expansion_mrr_eur: 0.00, reactivation_mrr_eur: 0.00, contraction_mrr_eur: 0.00, churned_mrr_eur: 0.00, closing_mrr_eur: 100.00}
+        - {customer_id: C1, mrr_month: '2026-02-01', movement_type: stable, opening_mrr_eur: 100.00, new_mrr_eur: 0.00, expansion_mrr_eur: 0.00, reactivation_mrr_eur: 0.00, contraction_mrr_eur: 0.00, churned_mrr_eur: 0.00, closing_mrr_eur: 100.00}
+        - {customer_id: C1, mrr_month: '2026-03-01', movement_type: expansion, opening_mrr_eur: 100.00, new_mrr_eur: 0.00, expansion_mrr_eur: 50.00, reactivation_mrr_eur: 0.00, contraction_mrr_eur: 0.00, churned_mrr_eur: 0.00, closing_mrr_eur: 150.00}
+        - {customer_id: C1, mrr_month: '2026-04-01', movement_type: contraction, opening_mrr_eur: 150.00, new_mrr_eur: 0.00, expansion_mrr_eur: 0.00, reactivation_mrr_eur: 0.00, contraction_mrr_eur: -30.00, churned_mrr_eur: 0.00, closing_mrr_eur: 120.00}
+        - {customer_id: C1, mrr_month: '2026-05-01', movement_type: churn, opening_mrr_eur: 120.00, new_mrr_eur: 0.00, expansion_mrr_eur: 0.00, reactivation_mrr_eur: 0.00, contraction_mrr_eur: 0.00, churned_mrr_eur: -120.00, closing_mrr_eur: 0.00}
+        - {customer_id: C1, mrr_month: '2026-07-01', movement_type: reactivation, opening_mrr_eur: 0.00, new_mrr_eur: 0.00, expansion_mrr_eur: 0.00, reactivation_mrr_eur: 80.00, contraction_mrr_eur: 0.00, churned_mrr_eur: 0.00, closing_mrr_eur: 80.00}
+        - {customer_id: C1, mrr_month: '2026-08-01', movement_type: stable, opening_mrr_eur: 80.00, new_mrr_eur: 0.00, expansion_mrr_eur: 0.00, reactivation_mrr_eur: 0.00, contraction_mrr_eur: 0.00, churned_mrr_eur: 0.00, closing_mrr_eur: 80.00}
+        - {customer_id: C2, mrr_month: '2026-08-01', movement_type: new, opening_mrr_eur: 0.00, new_mrr_eur: 40.00, expansion_mrr_eur: 0.00, reactivation_mrr_eur: 0.00, contraction_mrr_eur: 0.00, churned_mrr_eur: 0.00, closing_mrr_eur: 40.00}
+
+  - name: test_monthly_mrr_totals_and_churn_rates
+    description: >-
+      Les montants et les compteurs s'additionnent par mois. Les taux suivent
+      leur définition, valent NULL quand le mois s'ouvre sans MRR, et un mois
+      sans aucun client garde sa ligne.
+    model: mart_monthly_mrr
+    given:
+      - input: ref('int_months')
+        rows:
+          - {month_start: '2026-01-01', month_end: '2026-01-31'}
+          - {month_start: '2026-02-01', month_end: '2026-02-28'}
+          - {month_start: '2026-03-01', month_end: '2026-03-31'}
+          - {month_start: '2026-04-01', month_end: '2026-04-30'}
+          - {month_start: '2026-05-01', month_end: '2026-05-31'}
+      - input: ref('mart_customer_monthly_mrr')
+        rows:
+          - {customer_id: C1, mrr_month: '2026-01-01', movement_type: new, opening_mrr_eur: 0.00, new_mrr_eur: 100.00, expansion_mrr_eur: 0.00, reactivation_mrr_eur: 0.00, contraction_mrr_eur: 0.00, churned_mrr_eur: 0.00, closing_mrr_eur: 100.00}
+          - {customer_id: C2, mrr_month: '2026-01-01', movement_type: new, opening_mrr_eur: 0.00, new_mrr_eur: 100.00, expansion_mrr_eur: 0.00, reactivation_mrr_eur: 0.00, contraction_mrr_eur: 0.00, churned_mrr_eur: 0.00, closing_mrr_eur: 100.00}
+          - {customer_id: C1, mrr_month: '2026-02-01', movement_type: churn, opening_mrr_eur: 100.00, new_mrr_eur: 0.00, expansion_mrr_eur: 0.00, reactivation_mrr_eur: 0.00, contraction_mrr_eur: 0.00, churned_mrr_eur: -100.00, closing_mrr_eur: 0.00}
+          - {customer_id: C2, mrr_month: '2026-02-01', movement_type: contraction, opening_mrr_eur: 100.00, new_mrr_eur: 0.00, expansion_mrr_eur: 0.00, reactivation_mrr_eur: 0.00, contraction_mrr_eur: -50.00, churned_mrr_eur: 0.00, closing_mrr_eur: 50.00}
+          - {customer_id: C1, mrr_month: '2026-03-01', movement_type: reactivation, opening_mrr_eur: 0.00, new_mrr_eur: 0.00, expansion_mrr_eur: 0.00, reactivation_mrr_eur: 30.00, contraction_mrr_eur: 0.00, churned_mrr_eur: 0.00, closing_mrr_eur: 30.00}
+          - {customer_id: C2, mrr_month: '2026-03-01', movement_type: expansion, opening_mrr_eur: 50.00, new_mrr_eur: 0.00, expansion_mrr_eur: 20.00, reactivation_mrr_eur: 0.00, contraction_mrr_eur: 0.00, churned_mrr_eur: 0.00, closing_mrr_eur: 70.00}
+          - {customer_id: C1, mrr_month: '2026-04-01', movement_type: churn, opening_mrr_eur: 30.00, new_mrr_eur: 0.00, expansion_mrr_eur: 0.00, reactivation_mrr_eur: 0.00, contraction_mrr_eur: 0.00, churned_mrr_eur: -30.00, closing_mrr_eur: 0.00}
+          - {customer_id: C2, mrr_month: '2026-04-01', movement_type: churn, opening_mrr_eur: 70.00, new_mrr_eur: 0.00, expansion_mrr_eur: 0.00, reactivation_mrr_eur: 0.00, contraction_mrr_eur: 0.00, churned_mrr_eur: -70.00, closing_mrr_eur: 0.00}
+    expect:
+      rows:
+        - {mrr_month: '2026-01-01', opening_mrr_eur: 0.00, new_mrr_eur: 200.00, expansion_mrr_eur: 0.00, reactivation_mrr_eur: 0.00, contraction_mrr_eur: 0.00, churned_mrr_eur: 0.00, closing_mrr_eur: 200.00, opening_customer_count: 0, new_customer_count: 2, reactivated_customer_count: 0, churned_customer_count: 0, closing_customer_count: 2, gross_mrr_churn_rate: null, customer_churn_rate: null}
+        - {mrr_month: '2026-02-01', opening_mrr_eur: 200.00, new_mrr_eur: 0.00, expansion_mrr_eur: 0.00, reactivation_mrr_eur: 0.00, contraction_mrr_eur: -50.00, churned_mrr_eur: -100.00, closing_mrr_eur: 50.00, opening_customer_count: 2, new_customer_count: 0, reactivated_customer_count: 0, churned_customer_count: 1, closing_customer_count: 1, gross_mrr_churn_rate: 0.75, customer_churn_rate: 0.5}
+        - {mrr_month: '2026-03-01', opening_mrr_eur: 50.00, new_mrr_eur: 0.00, expansion_mrr_eur: 20.00, reactivation_mrr_eur: 30.00, contraction_mrr_eur: 0.00, churned_mrr_eur: 0.00, closing_mrr_eur: 100.00, opening_customer_count: 1, new_customer_count: 0, reactivated_customer_count: 1, churned_customer_count: 0, closing_customer_count: 2, gross_mrr_churn_rate: 0, customer_churn_rate: 0}
+        - {mrr_month: '2026-04-01', opening_mrr_eur: 100.00, new_mrr_eur: 0.00, expansion_mrr_eur: 0.00, reactivation_mrr_eur: 0.00, contraction_mrr_eur: 0.00, churned_mrr_eur: -100.00, closing_mrr_eur: 0.00, opening_customer_count: 2, new_customer_count: 0, reactivated_customer_count: 0, churned_customer_count: 2, closing_customer_count: 0, gross_mrr_churn_rate: 1, customer_churn_rate: 1}
+        - {mrr_month: '2026-05-01', opening_mrr_eur: 0.00, new_mrr_eur: 0.00, expansion_mrr_eur: 0.00, reactivation_mrr_eur: 0.00, contraction_mrr_eur: 0.00, churned_mrr_eur: 0.00, closing_mrr_eur: 0.00, opening_customer_count: 0, new_customer_count: 0, reactivated_customer_count: 0, churned_customer_count: 0, closing_customer_count: 0, gross_mrr_churn_rate: null, customer_churn_rate: null}
