@@ -26,6 +26,6 @@ from months as m
 inner join subscriptions as s
     on s.started_date <= m.month_end
     -- A subscription ending on the last day of the month will not recur, so it is already out.
-    and (s.ended_date is null or s.ended_date > m.month_end)
+    and (s.ended_date is null or m.month_end < s.ended_date)
 
 group by 1, 2

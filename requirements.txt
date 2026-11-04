@@ -21,12 +21,20 @@ babel==2.18.0
     # via agate
 certifi==2026.10.23
     # via requests
+chardet==7.7.0
+    # via
+    #   diff-cover
+    #   sqlfluff
 charset-normalizer==3.5.2
     # via requests
 click==8.5.0
-    # via dbt-core
+    # via
+    #   dbt-core
+    #   sqlfluff
 colorama==0.4.6
-    # via dbt-common
+    # via
+    #   dbt-common
+    #   sqlfluff
 comm==0.2.3
     # via ipykernel
 daff==1.4.2
@@ -44,6 +52,7 @@ dbt-core==1.12.6
     # via
     #   -r requirements.in
     #   dbt-duckdb
+    #   sqlfluff-templater-dbt
 dbt-core-experimental-parser==2.0.11
     # via dbt-core
 dbt-duckdb==1.11.1
@@ -59,6 +68,8 @@ debugpy==1.8.22
     # via ipykernel
 deepdiff==8.6.2
     # via dbt-common
+diff-cover==11.0.1
+    # via sqlfluff
 duckdb==2.0.0
     # via
     #   -r requirements.in
@@ -87,7 +98,12 @@ jinja2==3.1.6
     # via
     #   dbt-common
     #   dbt-core
+    #   diff-cover
+    #   jinja2-simple-tags
     #   metricflow
+    #   sqlfluff
+jinja2-simple-tags==0.6.1
+    # via sqlfluff-templater-dbt
 jsonschema==4.26.0
     # via
     #   dbt-common
@@ -156,12 +172,17 @@ pathspec==1.0.4
     # via
     #   dbt-common
     #   dbt-core
+    #   sqlfluff
 pexpect==4.9.0
     # via ipython
 platformdirs==4.14.4
-    # via jupyter-core
+    # via
+    #   jupyter-core
+    #   sqlfluff
 plotly==7.1.0
     # via -r requirements.in
+pluggy==1.7.0
+    # via diff-cover
 prompt-toolkit==3.0.53
     # via ipython
 protobuf==6.33.6
@@ -184,6 +205,7 @@ pydantic-core==2.50.2
     # via pydantic
 pygments==2.21.0
     # via
+    #   diff-cover
     #   ipython
     #   ipython-pygments-lexers
 python-dateutil==2.9.0.post0
@@ -205,6 +227,7 @@ pyyaml==6.0.3
     # via
     #   dbt-core
     #   metricflow
+    #   sqlfluff
 pyzmq==27.3.0
     # via
     #   ipykernel
@@ -216,6 +239,8 @@ referencing==0.37.0
     #   jsonschema
     #   jsonschema-specifications
     #   metricflow
+regex==2026.9.29
+    # via sqlfluff
 requests==2.34.2
     # via
     #   dbt-common
@@ -229,6 +254,12 @@ six==1.17.0
     # via python-dateutil
 snowplow-tracker==1.1.0
     # via dbt-core
+sqlfluff==4.5.0
+    # via
+    #   -r requirements.in
+    #   sqlfluff-templater-dbt
+sqlfluff-templater-dbt==4.5.0
+    # via -r requirements.in
 sqlglot==30.29.0
     # via metricflow
 sqlparse==0.6.1
@@ -237,12 +268,16 @@ stack-data==0.6.3
     # via ipython
 tabulate==0.10.0
     # via metricflow
+tblib==3.2.2
+    # via sqlfluff
 text-unidecode==1.3
     # via python-slugify
 tornado==6.6
     # via
     #   ipykernel
     #   jupyter-client
+tqdm==4.70.1
+    # via sqlfluff
 traitlets==5.16.1
     # via
     #   ipykernel

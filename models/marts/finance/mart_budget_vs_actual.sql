@@ -53,9 +53,11 @@ select
     cast(billed_amount_eur as decimal(14, 2)) as billed_amount_eur,
     budget_billed_eur,
     cast(billed_amount_eur - budget_billed_eur as decimal(14, 2)) as billed_variance_eur,
-    cast((billed_amount_eur - budget_billed_eur) / nullif(budget_billed_eur, 0) as decimal(7, 4)) as billed_variance_rate,
+    cast((billed_amount_eur - budget_billed_eur) / nullif(budget_billed_eur, 0) as decimal(7, 4))
+        as billed_variance_rate,
     closing_mrr_eur,
     budget_closing_mrr_eur,
     cast(closing_mrr_eur - budget_closing_mrr_eur as decimal(14, 2)) as mrr_variance_eur,
-    cast((closing_mrr_eur - budget_closing_mrr_eur) / nullif(budget_closing_mrr_eur, 0) as decimal(7, 4)) as mrr_variance_rate
+    cast((closing_mrr_eur - budget_closing_mrr_eur) / nullif(budget_closing_mrr_eur, 0) as decimal(7, 4))
+        as mrr_variance_rate
 from joined

@@ -8,7 +8,7 @@ Ce projet répond à ces questions pour une entreprise SaaS B2B fictive. Il part
 
 **[Consulter le rapport financier](https://melvinbrdt.github.io/saas-revenue-analytics/)**
 
-**Outils :** SQL, dbt Core, DuckDB, Python, Quarto, Plotly, Git et GitHub Actions.
+**Outils :** SQL, dbt Core, DuckDB, Python, SQLFluff, Quarto, Plotly, Git et GitHub Actions.
 
 Les données sont entièrement synthétiques : ce dépôt ne contient aucune donnée réelle ni personnelle.
 
@@ -167,7 +167,7 @@ flowchart TD
 
 Les données de démonstration contiennent volontairement des cas difficiles : plusieurs factures d'un même client sur un même mois, deux abonnements pour un même client, un mois où la seule facture est annulée, une facture émise le dernier jour du mois, une facture très en retard et un statut brut mal formaté. La contraction et la réactivation, absentes de ces données, sont couvertes par un test unitaire. Les tests ont aussi été éprouvés en cassant volontairement les modèles, pour vérifier qu'ils échouent bien quand il le faut.
 
-Chaque Pull Request déclenche la [CI](.github/workflows/dbt-ci.yml), qui régénère les données, reconstruit le projet, lance tous les tests et génère le rapport. Chaque fusion dans `main` publie ensuite le rapport. Une règle GitHub protège `main` : chaque changement passe par une Pull Request, et cette CI doit réussir avant la fusion.
+Chaque Pull Request déclenche la [CI](.github/workflows/dbt-ci.yml), qui régénère les données, contrôle le style SQL avec SQLFluff, reconstruit le projet, lance tous les tests et génère le rapport. Chaque fusion dans `main` publie ensuite le rapport. Une règle GitHub protège `main` : chaque changement passe par une Pull Request, et cette CI doit réussir avant la fusion.
 
 ## Lancer le projet
 
@@ -226,5 +226,4 @@ Ce projet est une démonstration, pas un système en production :
 
 ## Les prochaines étapes
 
-- Ajouter un lint SQL à la CI.
 - Ajouter les mois sans facture au mart par client, avec une population définie.

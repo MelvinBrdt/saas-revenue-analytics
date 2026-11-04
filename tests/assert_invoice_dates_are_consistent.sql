@@ -16,6 +16,7 @@ select
     c.closing_date
 from {{ ref('stg_billing__invoices') }} as i
 cross join closing as c
-where i.due_date < i.invoice_date
+where
+    i.due_date < i.invoice_date
     or i.paid_date < i.invoice_date
     or i.paid_date > c.closing_date
