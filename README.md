@@ -18,7 +18,7 @@ Les données sont entièrement synthétiques : ce dépôt ne contient aucune don
 |---|---|
 | Modélisation analytique | Des couches distinctes (staging, intermédiaire, table de faits, marts) avec un grain explicite pour chaque modèle |
 | Rigueur métier | Des définitions claires du montant facturé et du MRR, distincts de l'encaissé et du revenu comptabilisé |
-| Qualité des données | 117 tests de données et 11 tests unitaires, dont des réconciliations entre les modèles |
+| Qualité des données | 140 tests de données et 14 tests unitaires, dont des réconciliations entre les modèles |
 | Automatisation | Un pipeline de CI qui reconstruit et teste tout le projet à chaque Pull Request, puis publie le rapport |
 | Restitution | Un rapport web qui répond en français à des questions de contrôle de gestion et de comptabilité |
 | Reproductibilité | Des dépendances verrouillées et des données de démonstration identiques à chaque exécution |
@@ -121,24 +121,27 @@ flowchart TD
     D --> E[mart_monthly_billing<br>une ligne par mois]
     D --> F[mart_customer_monthly_billing<br>une ligne par client et par mois]
     C --> J[dim_customers<br>une ligne par client]
-    C --> G[int_customer_monthly_mrr<br>MRR de fin de mois par client]
+    C --> P[int_subscription_monthly_mrr<br>MRR de fin de mois par abonnement]
+    P --> G[int_customer_monthly_mrr<br>MRR de fin de mois par client]
+    P --> Q[mart_monthly_mrr_by_plan<br>MRR par plan et par mois]
     G --> H[mart_customer_monthly_mrr<br>mouvements par client et par mois]
     H --> I[mart_monthly_mrr<br>totaux et taux de churn par mois]
     D --> L[mart_open_invoices<br>factures à encaisser et retards]
     D --> M[mart_customer_payment_behavior<br>délais de paiement par client]
     N[Budget mensuel<br>seed dbt] --> O[mart_budget_vs_actual<br>écarts au budget par mois]
     E & I --> O
-    E & F & I & J & L & M & O --> K[Rapport financier<br>Quarto et Plotly]
+    D & F & H & I & L & O --> R[mart_finance_kpis<br>indicateurs clés à la date d'arrêt]
+    E & F & I & J & L & M & O & Q & R --> K[Rapport financier<br>Quarto et Plotly]
 ```
 
 | Couche | Modèles | Rôle |
 |---|---|---|
 | Référence | `budget_monthly` | Fournir le budget, saisi à la main et versionné dans le dépôt |
 | Staging | `stg_crm__customers`, `stg_billing__subscriptions`, `stg_billing__invoices` | Nettoyer et typer les données brutes, sans règle métier |
-| Intermédiaire | `int_months`, `int_customer_monthly_mrr` | Préparer le calendrier et le MRR de fin de mois, sans les exposer aux utilisateurs |
+| Intermédiaire | `int_months`, `int_subscription_monthly_mrr`, `int_customer_monthly_mrr` | Préparer le calendrier et le MRR de fin de mois, sans les exposer aux utilisateurs |
 | Table de faits | `fct_invoices` | Rattacher chaque facture à son client et calculer le montant facturé, à un seul endroit |
 | Dimension | `dim_customers` | Fournir le nom et le pays de chaque client aux analyses |
-| Marts | `mart_monthly_billing`, `mart_customer_monthly_billing`, `mart_customer_monthly_mrr`, `mart_monthly_mrr`, `mart_open_invoices`, `mart_customer_payment_behavior`, `mart_budget_vs_actual` | Fournir des agrégats prêts à l'emploi pour la finance |
+| Marts | `mart_monthly_billing`, `mart_customer_monthly_billing`, `mart_customer_monthly_mrr`, `mart_monthly_mrr`, `mart_open_invoices`, `mart_customer_payment_behavior`, `mart_budget_vs_actual`, `mart_monthly_mrr_by_plan`, `mart_finance_kpis` | Fournir des agrégats prêts à l'emploi pour la finance |
 | Rapport | `reports/index.qmd` | Présenter les résultats sans recalculer de règle métier |
 
 ## Les décisions de modélisation
@@ -152,6 +155,7 @@ flowchart TD
 - **Le churn se mesure au niveau du client.** Perdre un abonnement sur deux est une contraction, et un client qui revient est une réactivation, pas un nouveau client.
 - **Le calendrier s'arrête à la dernière facture, pas à la date du jour.** Les résultats restent ainsi identiques d'une exécution à l'autre.
 - **Les retards sont calculés à une date d'arrêt, pas à la date du jour.** Elle correspond au dernier jour du dernier mois facturé, pour que les résultats ne changent pas d'une exécution à l'autre.
+- **Les KPIs sont calculés dans un mart testé, pas dans le rapport.** Le NRR, le GRR ou le DSO ont ainsi une seule définition, vérifiée sur des valeurs calculées à la main.
 - **Le budget est un seed dbt.** C'est une donnée saisie à la main et qui change peu : un petit CSV versionné suffit, et chaque modification passe par une Pull Request.
 - **Un mois sans budget fait échouer le build.** Un écart calculé sur un budget manquant serait pire qu'une erreur visible.
 - **DuckDB plutôt qu'un entrepôt cloud.** Le projet se lance en quelques minutes, sans compte ni serveur, et les principes de modélisation restent les mêmes.
@@ -222,6 +226,7 @@ Ce projet est une démonstration, pas un système en production :
 - Le churn involontaire, lié aux impayés, n'est pas mesuré.
 - Un paiement solde toute la facture : les paiements partiels et les relances ne sont pas modélisés.
 - Le budget est fictif et porte sur le total du mois, sans détail par client ni par plan.
+- Le DSO est calculé hors taxes, faute de TVA modélisée.
 - Le projet ne couvre pas les grands volumes ni l'historisation des changements.
 
 ## Les prochaines étapes
