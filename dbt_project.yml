@@ -7,6 +7,8 @@ test-paths: ['tests']
 clean-targets: ['target', 'dbt_packages']
 models:
   saas_revenue_analytics:
+    # Staging stays a view, cheap to rebuild and not meant for consumers.
+    # Marts are tables because dashboards and analysts query them directly.
     staging:
       +materialized: view
       +schema: staging

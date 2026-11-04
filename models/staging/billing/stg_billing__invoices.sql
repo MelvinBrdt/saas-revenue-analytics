@@ -5,6 +5,7 @@ with source as (
 select
     trim(invoice_id) as invoice_id,
     trim(subscription_id) as subscription_id,
+    -- Strict casts on purpose: a malformed raw value fails the run instead of reaching the marts.
     cast(invoice_date as date) as invoice_date,
     cast(amount_eur as decimal(12, 2)) as amount_eur,
     lower(trim(invoice_status)) as invoice_status
