@@ -45,6 +45,61 @@ models:
           Elles sont comptées pour le suivi mais ne
           contribuent pas au montant facturé.
 
+  - name: mart_customer_monthly_billing
+    description: >-
+      Agrégation des factures par client et par mois d'émission.
+      Seuls les mois comportant au moins une facture apparaissent,
+      y compris ceux dont toutes les factures sont annulées.
+      Se réconcilie avec mart_monthly_billing.
+      Ce modèle ne mesure ni le MRR, ni les encaissements,
+      ni le revenu comptabilisé.
+
+    columns:
+      - name: customer_id
+        description: >-
+          Identifiant du client facturé.
+          Clé de granularité du mart avec invoice_month.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_crm__customers')
+                field: customer_id
+
+      - name: invoice_month
+        description: >-
+          Premier jour du mois d'émission des factures.
+          Clé de granularité du mart avec customer_id.
+        data_tests: [not_null]
+
+      - name: billed_amount_eur
+        description: >-
+          Somme des montants facturés au client sur le mois, en EUR.
+          Inclut les factures paid et open, exclut les factures void.
+          Vaut zéro si toutes les factures du mois sont annulées.
+        data_tests: [not_null]
+
+      - name: issued_invoice_count
+        description: >-
+          Nombre de factures non annulées émises pendant
+          le mois, soit les factures paid et open.
+
+      - name: paid_invoice_count
+        description: >-
+          Nombre de factures dont le statut est paid.
+
+      - name: open_invoice_count
+        description: >-
+          Nombre de factures dont le statut est open.
+          Ces factures contribuent au montant facturé
+          même si elles ne sont pas encore payées.
+
+      - name: void_invoice_count
+        description: >-
+          Nombre de factures annulées (statut void).
+          Elles sont comptées pour le suivi mais ne
+          contribuent pas au montant facturé.
+
   - name: fct_invoices
     description: >-
       Table de faits à la granularité d'une facture.
@@ -105,3 +160,24 @@ models:
           Ne représente pas un encaissement.
         data_tests:
           - not_null
+
+unit_tests:
+  - name: test_customer_monthly_billing_aggregates_invoices
+    description: >-
+      Plusieurs factures d'un même client et d'un même mois donnent
+      une seule ligne. Les données brutes ne contiennent pas ce cas,
+      que les tests sur données réelles ne peuvent donc pas couvrir.
+    model: mart_customer_monthly_billing
+    given:
+      - input: ref('fct_invoices')
+        rows:
+          - {customer_id: C001, invoice_date: 2026-01-05, invoice_status: paid, billed_amount_eur: 100.00}
+          - {customer_id: C001, invoice_date: 2026-01-20, invoice_status: void, billed_amount_eur: 0.00}
+          - {customer_id: C001, invoice_date: 2026-01-25, invoice_status: open, billed_amount_eur: 50.00}
+          - {customer_id: C001, invoice_date: 2026-02-03, invoice_status: paid, billed_amount_eur: 100.00}
+          - {customer_id: C002, invoice_date: 2026-01-10, invoice_status: void, billed_amount_eur: 0.00}
+    expect:
+      rows:
+        - {customer_id: C001, invoice_month: 2026-01-01, billed_amount_eur: 150.00, issued_invoice_count: 2, paid_invoice_count: 1, open_invoice_count: 1, void_invoice_count: 1}
+        - {customer_id: C001, invoice_month: 2026-02-01, billed_amount_eur: 100.00, issued_invoice_count: 1, paid_invoice_count: 1, open_invoice_count: 0, void_invoice_count: 0}
+        - {customer_id: C002, invoice_month: 2026-01-01, billed_amount_eur: 0.00, issued_invoice_count: 0, paid_invoice_count: 0, open_invoice_count: 0, void_invoice_count: 1}
