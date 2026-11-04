@@ -35,6 +35,7 @@ jobs:
           python -m pip check
           dbt --version
 
+      # The DuckDB file is not versioned, so each run rebuilds it from the fixtures.
       - name: Generate sample data
         run: python scripts/generate_data.py
 
