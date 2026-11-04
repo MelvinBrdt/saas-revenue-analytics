@@ -47,3 +47,42 @@ jobs:
 
       - name: Build and test dbt project
         run: dbt build --profiles-dir .
+
+      - name: Set up Quarto
+        uses: quarto-dev/quarto-actions/setup@v2
+        with:
+          version: 1.11.9
+
+      # Rendered on every run, so a report broken by a model change blocks the merge.
+      - name: Render financial report
+        run: quarto render reports/index.qmd
+
+      - name: Prepare site
+        if: github.event_name == 'push'
+        run: |
+          mkdir _site
+          cp -r reports/index.html reports/index_files reports/styles.css _site/
+
+      - name: Upload site
+        if: github.event_name == 'push'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+  publish-report:
+    needs: dbt-build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+
+    permissions:
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Publish to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
