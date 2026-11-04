@@ -30,6 +30,7 @@ models:
         description: >-
           Date de création du client, convertie
           depuis le champ source created_at.
+        data_tests: [not_null]
 
   - name: stg_billing__subscriptions
     description: >-
@@ -72,14 +73,15 @@ models:
 
       - name: ended_date
         description: >-
-          Date de fin de l'abonnement, si renseignée
-          et convertible en date. Peut être NULL.
+          Date de fin de l'abonnement. NULL si l'abonnement
+          est en cours. Une date illisible fait échouer le build.
 
       - name: monthly_price_eur
         description: >-
           Prix mensuel associé à l'abonnement, en EUR.
           Valeur de type DECIMAL(12,2).
           Ne constitue pas à elle seule une mesure de MRR.
+        data_tests: [not_null]
 
   - name: stg_billing__invoices
     description: >-
