@@ -41,18 +41,27 @@ Les CSV de démonstration sont de petits fixtures versionnés. Chaque exécution
 | --- | ---: | ---: |
 | Janvier 2026 | 198,00 | 2 |
 | Février 2026 | 396,00 | 4 |
-| Mars 2026 | 695,00 | 5 |
+| Mars 2026 | 744,00 | 6 |
 | Avril 2026 | 695,00 | 5 |
-| Mai 2026 | 695,00 | 5 |
-| Juin 2026 | 695,00 | 5 |
+| Mai 2026 | 845,00 | 7 |
+| Juin 2026 | 844,00 | 6 |
 
-La facture annulée (`void`) d’avril ne contribue pas aux 695,00 EUR.
+Les factures annulées (`void`) de mars et d'avril ne contribuent pas à ces montants.
+
+Les fixtures contiennent volontairement des cas difficiles :
+
+- Plusieurs factures d'un même client sur un même mois : `paid` et `void`, `paid` et `open`, deux `paid`, et deux abonnements du même client
+- Un mois où le client n'a qu'une facture annulée
+- Une facture émise le dernier jour du mois
+- Une facture émise après la fin de l'abonnement, qui reste comptée
+- Un statut brut non normalisé (` OPEN`), que le staging doit nettoyer
 
 ## Contrôles
 
 - Tests sources et staging : clés `unique`, `not_null`, valeurs permises, relations clients/abonnements/factures
 - Test singulier : le total du mart se réconcilie avec les factures admissibles en staging
 - Test singulier `assert_invoice_amount_non_negative` : vérifie qu'aucune facture ne possède un montant négatif. Ce test a été validé en introduisant volontairement une anomalie, puis en restaurant les données.
+- Test unitaire de `fct_invoices` : le montant facturé suit le statut, avec des valeurs attendues écrites à la main
 - Tests de `mart_customer_monthly_billing` : unicité du couple client et mois, réconciliation mensuelle avec `mart_monthly_billing`, et test unitaire d'agrégation de plusieurs factures d'un même client sur un même mois
 - Commande : `dbt build --profiles-dir .`
 
@@ -64,11 +73,18 @@ La facture annulée (`void`) d’avril ne contribue pas aux 695,00 EUR.
 4. Modifier volontairement une donnée source pour provoquer un test en échec, puis corriger le problème.
 5. Documenter dans le README les décisions et limites métier.
 
-## Itérations futures (hors V1)
+## Itérations
+
+Réalisées :
 
 - I2 : modélisation `fct_invoices`, découpage explicite grain facture / agrégation, contrôles métier renforcés
-- I3 : CI sur Pull Request, tests automatiques, qualité de code
-- I4 (facultatif) : abonnement temporel, analyse churn/MRR avec définition métier rigoureuse
+- I3 : CI sur Pull Request, tests automatiques
+
+À venir :
+
+- Lint SQL en CI
+- `mart_customer_monthly_billing` : ajout des mois sans facture, avec une dimension temporelle et une population définie
+- Facultatif : abonnement temporel, analyse churn/MRR avec définition métier rigoureuse
 
 ## Limites
 
