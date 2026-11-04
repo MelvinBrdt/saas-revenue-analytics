@@ -1,4 +1,4 @@
-
+-- Credit notes are out of scope, so a negative amount can only be bad data.
 select
     invoice_id,
     amount_eur

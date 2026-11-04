@@ -34,6 +34,8 @@ final as (
 
     from invoices as i
 
+    -- Left join: an invoice without a known subscription must stay in the fact so
+    -- totals remain correct. The not_null test on customer_id reports it.
     left join subscriptions as s
         on i.subscription_id = s.subscription_id
 

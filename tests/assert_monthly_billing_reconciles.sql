@@ -1,4 +1,5 @@
 -- Return differences only: a successful dbt singular test returns zero rows.
+-- Recomputed from staging, not fct_invoices, so an error in the billed amount rule is caught.
 with expected as (
     select
         cast(date_trunc('month', invoice_date) as date) as invoice_month,
